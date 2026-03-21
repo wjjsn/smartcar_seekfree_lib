@@ -1,0 +1,25 @@
+#!/bin/sh
+
+echo "Executing rcK (with aic8800m_wifi unload)..."
+
+rmmod fb_st7789v   2>/dev/null || true
+rmmod aic8800_fdrv 2>/dev/null || true
+rmmod aic8800_bsp  2>/dev/null || true
+
+# 2. 跳过 iptables 停止（因模块缺失，无需执行）
+# 原停止 iptables 的命令注释掉，避免报错阻塞
+
+# 3. 强制同步文件系统（关键，修复后必做）
+sync
+
+# 4. 保留默认关机流程，但简化卸载（避免文件系统错误）
+mount -n -o remount,ro / || true  # 只读挂载失败也继续
+killall5 -15
+sleep 1
+killall5 -9
+umount -a -r || true  # 卸载失败也继续
+swapoff -a || true
+
+# 5. 强制重启（终极兜底，若前面步骤卡住）
+echo b > /proc/sysrq-trigger
+EOF

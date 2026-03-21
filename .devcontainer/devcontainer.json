@@ -1,0 +1,24 @@
+{
+    "name": "seekfree",
+    "mounts": [
+        "source=${localWorkspaceFolder}/ls_2k0300_env,target=/opt/ls_2k0300_env,type=bind,consistency=cached"
+],
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "http_proxy": "http://127.0.0.1:7897",
+            "https_proxy": "http://127.0.0.1:7897"
+        },
+        "options": [
+            "--network=host"
+        ]
+    },
+    "runArgs": [
+        "--network=host"
+    ],
+    "containerEnv": {
+        "http_proxy": "http://127.0.0.1:7897",
+        "https_proxy": "http://127.0.0.1:7897"
+    },
+    "remoteUser": "ubuntu"
+}

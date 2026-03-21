@@ -1,0 +1,44 @@
+/dts-v1/;
+
+/ {
+    description = "Various kernels and ramdisks blobs";
+    #address-cells = <2>;
+
+    images {
+        kernel-1 {
+            description = "vmlinux";
+            data = /incbin/("build/vmlinux.bin");
+            type = "kernel";
+            arch = "loongarch";
+            os = "linux";
+            compression = "none";
+            load = <0x90000000 0x00200000>;
+            entry = <0x90000000 0x0136d000>;
+                                
+            hash-1 {
+                algo = "sha1";
+            };
+        };
+
+        fdt-1 {
+            description = "LoongArch Device Tree";
+            data = /incbin/("build/loongson_2k0300_99_pai_wifi.dtb");
+            type = "flat_dt";
+            arch = "loongarch";
+            compression = "none";
+            // load = <0x90000000 0x020c1000>;
+            hash-1 {
+                algo = "sha1";
+            };
+        };
+    }; /* images 节点在此闭合 */
+
+    configurations {
+        default = "config-1";
+        config-1 {
+            description = "build by wjjsn";
+            kernel = "kernel-1";
+            // fdt = "fdt-1";
+        };
+    };
+};

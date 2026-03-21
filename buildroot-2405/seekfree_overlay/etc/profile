@@ -1,0 +1,30 @@
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
+
+# if [ "$PS1" ]; then
+# 	if [ "`id -u`" -eq 0 ]; then
+# 		export PS1='# '
+# 	else
+# 		export PS1='$ '
+# 	fi
+# fi
+
+PS1='[\u@\h]:\w$:'
+export PS1
+
+export EDITOR='/bin/vi'
+
+# Source configuration files from /etc/profile.d
+for i in /etc/profile.d/*.sh ; do
+	if [ -r "$i" ]; then
+		. $i
+	fi
+done
+unset i
+
+# 定义ll为ls -l的别名（BusyBox sh兼容写法）
+alias ll='ls -l'
+# 可选：添加la（ls -la）、lh（ls -lh）等常用别名
+alias la='ls -la'
+alias lh='ls -lh'
+export HOME=/home/root
+
