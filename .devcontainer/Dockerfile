@@ -20,7 +20,7 @@ RUN apt-get update && apt-fast install -y \
     build-essential libncurses-dev libssl-dev libelf-dev \
     bash bc binutils devscripts g++ git make \
     flex bison \
-    python3 python3-flake8 python3-requests python3-setuptools \
+    cmake \
     just \
     unzip wget rsync file cpio fish\
     locales libreadline-dev sudo u-boot-tools \

@@ -1,7 +1,3 @@
-# 定义变量
-ARCH := "loongarch"
-CROSS_COMPILE := "/workspaces/buildroot-devcontainer/buildroot/output/host/bin/loongarch64-buildroot-linux-musl-"
-
 BUILDROOT_PATH := "buildroot-2405"
 LINUX_PATH := "ls2k0300_linux_4.19"
 
@@ -17,14 +13,27 @@ linux-build:
 # 构建根文件系统
 build-buildroot:
     cd {{BUILDROOT_PATH}} && \
-    make olddefconfig && \
-    make && \
-    cp .config ../.config-buildroot
+    ./build.sh
+
+build-example:
+    cd Example && \
+    ./replace_ip.sh && \
+    ./build_all.sh
+
+install-example: build-buildroot build-example
+    find Example -type f -executable ! -name "*.*" -exec cp {} buildroot-2405/output/target/home/root \; && \
+    just build-buildroot
+
 
 # 生成fit镜像
-make-fit-image: linux-build build-buildroot
+make-fit-image: linux-build
     mkdir -p build && \
     rm -f build/* && \
-    cp {{LINUX_PATH}}/arch/loongarch/boot/vmlinux.bin ./build && \
-    cp {{LINUX_PATH}}/arch/loongarch/boot/dts/*.dtb ./build && \
+    cp {{LINUX_PATH}}/arch/loongarch/boot/compressed/vmlinux.bin ./build && \
     mkimage -f multi.its build/image.itb
+
+all:
+    just install-example
+    cp buildroot-2405/output/images/* ./build/
+    just make-fit-image
+
