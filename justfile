@@ -1,6 +1,10 @@
 BUILDROOT_PATH := "buildroot-2405"
 LINUX_PATH := "ls2k0300_linux_4.19"
 
+RED:='\033[0;31m'
+GREEN:='\033[0;32m'
+NC:='\033[0m' # 无颜色 (No Color)
+
 # 展示该帮助页面
 default:
     just --list
@@ -13,15 +17,17 @@ linux-build:
 # 构建根文件系统
 build-buildroot:
     cd {{BUILDROOT_PATH}} && \
-    ./build.sh
+    ./build.sh 1>/dev/null
 
 build-example:
     cd Example && \
-    ./replace_ip.sh && \
-    ./build_all.sh
+    cmake -G Ninja -B build -DCMAKE_TOOLCHAIN_FILE=cross.cmake -DCMAKE_INSTALL_PREFIX=/workspaces/seekfree/buildroot-2405/output/target/home/root && \
+    cd build && \
+    ninja all
 
 install-example: build-buildroot build-example
-    find Example -type f -executable ! -name "*.*" -exec cp {} buildroot-2405/output/target/home/root \; && \
+    ninja install -C Example/build 1>/dev/null && \
+    echo '{{GREEN}}install done{{NC}}' && \
     just build-buildroot
 
 
