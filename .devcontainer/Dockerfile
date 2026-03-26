@@ -18,9 +18,9 @@ RUN curl -L https://raw.githubusercontent.com/ilikenwf/apt-fast/master/apt-fast.
 
 RUN apt-get update && apt-fast install -y \
     build-essential libncurses-dev libssl-dev libelf-dev \
-    bash bc binutils devscripts g++ git make \
+    bash bc binutils devscripts g++ git make ninja-build \
     flex bison \
-    cmake \
+    cmake clangd bear\
     just \
     unzip wget rsync file cpio fish\
     locales libreadline-dev sudo u-boot-tools \

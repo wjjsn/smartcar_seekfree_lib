@@ -20,5 +20,28 @@
         "http_proxy": "http://127.0.0.1:7897",
         "https_proxy": "http://127.0.0.1:7897"
     },
-    "remoteUser": "ubuntu"
+    "remoteUser": "ubuntu",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "llvm-vs-code-extensions.vscode-clangd",
+                "ms-vscode.cmake-tools"
+            ],
+            "settings": {
+                // 指定 clangd 的路径，通常在 Linux 下直接写 "clangd" 即可（如果已加入 PATH）
+                "clangd.path": "clangd",
+                // 禁用插件自动检查更新/下载的提示，避免弹出 .exe 下载框
+                "clangd.checkUpdates": false,
+                // 告诉插件不要去下载那个特定的服务器版本
+                "clangd.serverCompletionRanking": true,
+                "clangd.arguments": [
+                    "--query-driver=/opt/ls_2k0300_env/loongson-gnu-toolchain-8.3-x86_64-loongarch64-linux-gnu-rc1.6/bin/loongarch64-linux-gnu-*",
+                ],
+                "cmake.configureOnOpen": false,
+                "cmake.configureOnEdit": false,
+                "cmake.ignoreKitCheck": true,
+                "cmake.loggingLevel": "error"
+            }
+        }
+    }
 }
