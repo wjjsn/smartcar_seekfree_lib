@@ -3,20 +3,13 @@ FROM ubuntu:24.04
 # 设置环境变量，确保安装过程不产生交互
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN echo 'Acquire::Retries "50";' > /etc/apt/apt.conf.d/80-retries
-RUN echo 'Acquire::http::Pipeline-Depth "10";' > /etc/apt/apt.conf.d/99parallel
-RUN echo 'Acquire::http::No-Cache "false";' >> /etc/apt/apt.conf.d/99parallel && \
-    echo 'Acquire::http::No-Store "false";' >> /etc/apt/apt.conf.d/99parallel
+COPY ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
 
-RUN apt-get update && apt-get install -y aria2 curl ca-certificates --no-install-recommends \
+RUN apt-get -o "Acquire::https::Verify-Peer=false" -o "Acquire::AllowInsecureRepositories=true" -o "Acquire::AllowDowngradeToInsecureRepositories=true" update && \
+    apt-get -o "Acquire::https::Verify-Peer=false" -o "Acquire::AllowInsecureRepositories=true" -o "Acquire::AllowDowngradeToInsecureRepositories=true" install -y aria2 curl ca-certificates --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -L https://raw.githubusercontent.com/ilikenwf/apt-fast/master/apt-fast -o /usr/local/bin/apt-fast \
-    && chmod +x /usr/local/bin/apt-fast
-
-RUN curl -L https://raw.githubusercontent.com/ilikenwf/apt-fast/master/apt-fast.conf -o /etc/apt-fast.conf
-
-RUN apt-get update && apt-fast install -y \
+RUN apt-get update && apt-get install -y \
     build-essential libncurses-dev libssl-dev libelf-dev \
     bash bc binutils devscripts g++ git make ninja-build \
     flex bison \
