@@ -1,0 +1,26 @@
+# 这里的配置会递归应用到所有子目录
+If:
+  PathMatch: .*
+
+CompilationDatabase: "build" # 告诉 clangd 优先去哪里找 json
+
+---
+# 针对特定子目录进行重定向
+If:
+  PathMatch: kernel/.*
+CompilationDatabase: "kernel/"
+
+---
+If:
+  PathMatch: uboot/.*
+CompilationDatabase: "uboot/"
+
+---
+If:
+  PathMatch: app/.*
+CompilationDatabase: "app/build/"
+
+---
+If:
+  PathMatch: Example/.*
+CompilationDatabase: "Example/"

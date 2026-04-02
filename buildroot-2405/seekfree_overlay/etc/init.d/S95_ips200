@@ -1,0 +1,4 @@
+#!/bin/sh
+
+insmod /usr/lib/modules/4.19.190/fb_st7789v.ko
+

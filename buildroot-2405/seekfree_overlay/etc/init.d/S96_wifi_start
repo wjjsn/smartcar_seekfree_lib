@@ -1,0 +1,6 @@
+#!/bin/sh
+insmod /usr/lib/modules/4.19.190/aic8800_bsp.ko
+insmod /usr/lib/modules/4.19.190/aic8800_fdrv.ko
+wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf -D nl80211 &
+sleep 1
+udhcpc -i wlan0 > /dev/null 2>&1 &
