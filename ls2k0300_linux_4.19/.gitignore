@@ -186,3 +186,7 @@ sphinx_*/
 /rust-project.json
 *.builtin
 *.efi
+
+!drivers/net/can/ls_can/lscan_platform.elf
+!drivers/net/can/ls_can/lscan_olddma.elf
+!/.config
