@@ -26,7 +26,7 @@ build-example:
     ninja all
 
 install-example: build-buildroot build-example
-    ninja install -C Example/build 1>/dev/null && \
+    sudo ninja install -C Example/build 1>/dev/null && \
     echo '{{GREEN}}install done{{NC}}' && \
     just build-buildroot
 
