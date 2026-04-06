@@ -34,6 +34,8 @@ add_subdirectory(Motherboard_Demo/E09_01_tflite_picture_classic)
 add_subdirectory(Motherboard_Demo/E09_02_tflite_camera_classic)
 add_subdirectory(Motherboard_Demo/opencv_check)
 
+add_subdirectory(Motherboard_Demo/camera_send2pc)
+
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E create_symlink
     ${CMAKE_BINARY_DIR}/compile_commands.json
