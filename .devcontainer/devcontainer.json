@@ -1,19 +1,8 @@
 {
-    "name": "seekfree",
-    "mounts": [
-        "source=${localWorkspaceFolder}/ls_2k0300_env,target=/opt/ls_2k0300_env,type=bind,consistency=cached"
-],
-    "build": {
-        "dockerfile": "Dockerfile",
-        "args": {
-        },
-        "options": [
-            "--network=host"
-        ]
-    },
-    "runArgs": [
-        "--network=host"
-    ],
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "loongson_devcontainer",
+    "workspaceFolder": "/workspace",
+    "shutdownAction": "stopCompose",
     "containerEnv": {
         "http_proxy": "http://127.0.0.1:7890",
         "https_proxy": "http://127.0.0.1:7890"
@@ -38,7 +27,10 @@
                 "cmake.configureOnOpen": false,
                 "cmake.configureOnEdit": false,
                 "cmake.ignoreKitCheck": true,
-                "cmake.loggingLevel": "error"
+                "cmake.loggingLevel": "error",
+                "files.exclude": {
+                    "ls_2k0300_env/": true
+                }
             }
         }
     }
