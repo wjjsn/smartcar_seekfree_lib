@@ -1,4 +1,5 @@
 {
+    "name": "loongson_devcontainer",
     "dockerComposeFile": "docker-compose.yml",
     "service": "loongson_devcontainer",
     "workspaceFolder": "/workspace",

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: loongson_dev
+    # container_name: loongson_dev
     network_mode: host
 
     volumes:
