@@ -32,6 +32,8 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+#include <iostream>
+#include <ostream>
 
 // *************************** 例程硬件连接说明 ***************************
 //  久久派与主板使用54pin排线连接，再将久久派插到主板上面，确保插到底核心板与主板插座间没有缝隙即可
@@ -74,15 +76,12 @@ int main(int, char**)
 
     while(1)
     {
-        printf("key_0 = %d\r\n", gpio_get_level(KEY_0));
-        printf("key_1 = %d\r\n", gpio_get_level(KEY_1));
-        printf("key_2 = %d\r\n", gpio_get_level(KEY_2));
-        printf("key_3 = %d\r\n", gpio_get_level(KEY_3));
-
-        printf("switch_0 = %d\r\n", gpio_get_level(SWITCH_0));
-        printf("switch_1 = %d\r\n", gpio_get_level(SWITCH_1));
-
-        system_delay_ms(100);
+      printf("key0=%d | 1=%d | 2=%d | 3=%d | sw0=%d | sw1=%d\r",
+             gpio_get_level(KEY_0), gpio_get_level(KEY_1),
+             gpio_get_level(KEY_2), gpio_get_level(KEY_3),
+             gpio_get_level(SWITCH_0), gpio_get_level(SWITCH_1));
+      std::cout << std::flush;
+      system_delay_ms(100);
     }
 }
 

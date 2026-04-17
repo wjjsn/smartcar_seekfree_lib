@@ -66,6 +66,7 @@
 
 // **************************** 代码区域 ****************************
 #include "zf_common_headfile.h"
+#include <iostream>
 
 
 timer_fd *pit_timer;
@@ -95,10 +96,9 @@ int main(int, char**)
     while(1)
     {
 
-        printf("zf_encoder_left = %d.\r\n", encoder_left);
-        printf("zf_encoder_right = %d.\r\n", encoder_right);
-
-        system_delay_ms(100);
+      printf("left:%d,right:%d     \r", encoder_left, encoder_right);
+        std::cout<<std::flush;
+      system_delay_ms(100);
     }
 }
 
