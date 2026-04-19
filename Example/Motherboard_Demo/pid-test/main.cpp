@@ -35,7 +35,8 @@ int main(int argc, char **argv) {
   PID left(100, pid_kp_func, 0, 0, -10000, 10000);
   PID right(100, pid_kp_func, 0, 0, -10000, 10000);
 
-  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  static int sockfd = -1;
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
     perror("socket failed");
     return 1;
