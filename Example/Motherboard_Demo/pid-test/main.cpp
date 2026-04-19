@@ -10,6 +10,8 @@
 #include <signal.h>
 #include <string.h>
 #include <poll.h>
+#include <pthread.h>
+#include <unistd.h>
 
 #define MOTOR1_DIR "/dev/zf_driver_gpio_motor_1"
 #define MOTOR1_PWM "/dev/zf_device_pwm_motor_1"
@@ -25,6 +27,28 @@ float g_kp = 1.0f, g_ki = 0.0f, g_kd = 0.0f;
 float g_left_speed = 100.0f, g_right_speed = 100.0f;
 float g_left_duty = 0.0f, g_right_duty = 0.0f;
 
+char g_recv_buf[256] = {0};
+int g_recv_ready = 0;
+int g_sockfd = -1;
+
+void* recv_thread(void*) {
+  while (g_running) {
+    if (g_sockfd >= 0) {
+      char buf[256] = {0};
+      ssize_t len = recv(g_sockfd, buf, sizeof(buf) - 1, 0);
+      if (len > 0) {
+        memcpy(g_recv_buf, buf, sizeof(g_recv_buf) - 1);
+        g_recv_ready = 1;
+      } else if (len < 0) {
+        break;
+      } else {
+        sleep(1);
+      }
+    }
+  }
+  return NULL;
+}
+
 float pid_kp_func(float error) { return error * g_kp; }
 
 int main(int argc, char **argv) {
@@ -35,9 +59,8 @@ int main(int argc, char **argv) {
   PID left(100, pid_kp_func, 0, 0, -10000, 10000);
   PID right(100, pid_kp_func, 0, 0, -10000, 10000);
 
-  static int sockfd = -1;
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0) {
+  g_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (g_sockfd < 0) {
     perror("socket failed");
     return 1;
   }
@@ -49,24 +72,26 @@ int main(int argc, char **argv) {
   server_addr.sin_addr.s_addr = inet_addr("192.168.1.123");
 
   printf("Connecting to 192.168.1.123:1347...\n");
-  if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+  if (connect(g_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
     perror("connect failed");
-    close(sockfd);
+    close(g_sockfd);
     return 1;
   }
   printf("TCP connected\n");
   fflush(stdout);
 
+  pthread_t tid;
+  pthread_create(&tid, NULL, recv_thread, NULL);
+
   int loop_count = 0;
   while (g_running) {
     loop_count++;
 
-    char buf[256] = {0};
-    fprintf(stderr, "DEBUG BEFORE RECV: loop=%d sockfd=%d\n", loop_count, sockfd);
-    ssize_t len = recv(sockfd, buf, sizeof(buf) - 1, 0);
-    fprintf(stderr, "DEBUG AFTER RECV: loop=%d sockfd=%d len=%zd errno=%d\n", loop_count, sockfd, len, errno);
-    if (len > 0) {
-      printf("recv_count:%d buf:%s\n", (int)len, buf);
+    if (g_recv_ready) {
+      g_recv_ready = 0;
+      char buf[256] = {0};
+      memcpy(buf, g_recv_buf, sizeof(g_recv_buf) - 1);
+      printf("recv_count:%d buf:%s\n", (int)strlen(buf), buf);
       fflush(stdout);
       char key[32] = {0};
       float value = 0;
@@ -80,13 +105,6 @@ int main(int argc, char **argv) {
         else if (strcmp(key, "right_duty") == 0) { g_right_duty = value; printf("set right_duty=%.2f\n", (double)value); }
       }
       fflush(stdout);
-    } else if (len < 0) {
-      fprintf(stderr, "recv error at loop %d: %m (sockfd=%d)\n", loop_count, sockfd);
-      break;
-    } else {
-      fprintf(stderr, "recv zero at loop %d (sockfd=%d)\n", loop_count, sockfd);
-      sleep(1);
-      continue;
     }
 
     int16_t lc = encoder_get_count(ENCODER_1);
@@ -118,8 +136,10 @@ int main(int argc, char **argv) {
         printf("lc:%d rc:%d lo:%.1f ro:%.1f\r", lc, rc, (double)lo, (double)ro);
       }
     }
+
+    usleep(10000);
   }
 
-  close(sockfd);
+  close(g_sockfd);
   return 0;
 }
