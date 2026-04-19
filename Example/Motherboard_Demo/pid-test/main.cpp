@@ -36,8 +36,10 @@ int main(int argc, char **argv) {
   PID right(100, pid_kp_func, 0, 0, -10000, 10000);
 
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  int flags = fcntl(sockfd, F_GETFL, 0);
-  fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+  if (sockfd < 0) {
+    perror("socket failed");
+    return 1;
+  }
 
   sockaddr_in server_addr;
   memset(&server_addr, 0, sizeof(server_addr));
@@ -45,31 +47,42 @@ int main(int argc, char **argv) {
   server_addr.sin_port = htons(1347);
   server_addr.sin_addr.s_addr = inet_addr("192.168.1.123");
 
-  connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
-  printf("TCP connect called\n");
+  printf("Connecting to 192.168.1.123:1347...\n");
+  if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    perror("connect failed");
+    close(sockfd);
+    return 1;
+  }
+  printf("TCP connected\n");
   fflush(stdout);
 
   int loop_count = 0;
   while (g_running) {
     loop_count++;
 
-    struct pollfd pfd = {sockfd, POLLIN, 0};
-    if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN)) {
-      char buf[256] = {0};
-      ssize_t len = recv(sockfd, buf, sizeof(buf) - 1, 0);
-      if (len > 0) {
-        char key[32] = {0};
-        int value = 0;
-        if (sscanf(buf, "%31[^:]:%d", key, &value) == 2) {
-          if (strcmp(key, "kp") == 0) { g_kp = value; printf("set kp=%d\n", value); fflush(stdout); }
-          else if (strcmp(key, "ki") == 0) { g_ki = value; printf("set ki=%d\n", value); fflush(stdout); }
-          else if (strcmp(key, "kd") == 0) { g_kd = value; printf("set kd=%d\n", value); fflush(stdout); }
-          else if (strcmp(key, "left_speed") == 0) { g_left_speed = value; printf("set left_speed=%d\n", value); fflush(stdout); }
-          else if (strcmp(key, "right_speed") == 0) { g_right_speed = value; printf("set right_speed=%d\n", value); fflush(stdout); }
-          else if (strcmp(key, "left_duty") == 0) { g_left_duty = value; printf("set left_duty=%d\n", value); fflush(stdout); }
-          else if (strcmp(key, "right_duty") == 0) { g_right_duty = value; printf("set right_duty=%d\n", value); fflush(stdout); }
-        }
+    char buf[256] = {0};
+    ssize_t len = recv(sockfd, buf, sizeof(buf) - 1, 0);
+    if (len > 0) {
+      printf("recv_count:%d buf:%s\n", (int)len, buf);
+      fflush(stdout);
+      char key[32] = {0};
+      float value = 0;
+      if (sscanf(buf, "%31[^:]:%f", key, &value) == 2) {
+        if (strcmp(key, "kp") == 0) { g_kp = value; printf("set kp=%.2f\n", (double)value); }
+        else if (strcmp(key, "ki") == 0) { g_ki = value; printf("set ki=%.2f\n", (double)value); }
+        else if (strcmp(key, "kd") == 0) { g_kd = value; printf("set kd=%.2f\n", (double)value); }
+        else if (strcmp(key, "left_speed") == 0) { g_left_speed = value; printf("set left_speed=%.2f\n", (double)value); }
+        else if (strcmp(key, "right_speed") == 0) { g_right_speed = value; printf("set right_speed=%.2f\n", (double)value); }
+        else if (strcmp(key, "left_duty") == 0) { g_left_duty = value; printf("set left_duty=%.2f\n", (double)value); }
+        else if (strcmp(key, "right_duty") == 0) { g_right_duty = value; printf("set right_duty=%.2f\n", (double)value); }
       }
+      fflush(stdout);
+    } else if (len < 0) {
+      perror("recv error");
+      break;
+    } else {
+      usleep(1000);
+      continue;
     }
 
     int16_t lc = encoder_get_count(ENCODER_1);
@@ -98,7 +111,7 @@ int main(int argc, char **argv) {
       pwm_set_duty(MOTOR2_PWM, (int)abs(ro));
 
       if (loop_count % 100 == 0) {
-        printf("lc:%d rc:%d lo:%.1f ro:%.1f\n", lc, rc, (double)lo, (double)ro);
+        printf("lc:%d rc:%d lo:%.1f ro:%.1f\r", lc, rc, (double)lo, (double)ro);
       }
     }
   }
