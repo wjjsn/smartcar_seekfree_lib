@@ -61,7 +61,9 @@ int main(int argc, char **argv) {
     loop_count++;
 
     char buf[256] = {0};
+    fprintf(stderr, "DEBUG BEFORE RECV: loop=%d sockfd=%d\n", loop_count, sockfd);
     ssize_t len = recv(sockfd, buf, sizeof(buf) - 1, 0);
+    fprintf(stderr, "DEBUG AFTER RECV: loop=%d sockfd=%d len=%zd errno=%d\n", loop_count, sockfd, len, errno);
     if (len > 0) {
       printf("recv_count:%d buf:%s\n", (int)len, buf);
       fflush(stdout);
@@ -78,10 +80,11 @@ int main(int argc, char **argv) {
       }
       fflush(stdout);
     } else if (len < 0) {
-      perror("recv error");
+      fprintf(stderr, "recv error at loop %d: %m (sockfd=%d)\n", loop_count, sockfd);
       break;
     } else {
-      usleep(1000);
+      fprintf(stderr, "recv zero at loop %d (sockfd=%d)\n", loop_count, sockfd);
+      sleep(1);
       continue;
     }
 
