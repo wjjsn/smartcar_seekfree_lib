@@ -11,6 +11,7 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     zf::library
     ${OpenCV_LIBS}
+    pthread
 )
 
 install(TARGETS ${PROJECT_NAME} DESTINATION .)
