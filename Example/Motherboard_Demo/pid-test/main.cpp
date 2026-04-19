@@ -59,22 +59,16 @@ int main(int argc, char **argv) {
         char key[32] = {0};
         int value = 0;
         if (sscanf(recv_buffer, "%31[^:]:%d", key, &value) == 2) {
+          bool updated = false;
           std::lock_guard<std::mutex> lock(g_pid_mutex);
-          if (strcmp(key, "kp") == 0) {
-            g_kp = value;
-          } else if (strcmp(key, "ki") == 0) {
-            g_ki = value;
-          } else if (strcmp(key, "kd") == 0) {
-            g_kd = value;
-          } else if (strcmp(key, "left_speed") == 0) {
-            g_left_speed = value;
-          } else if (strcmp(key, "right_speed") == 0) {
-            g_right_speed = value;
-          } else if (strcmp(key, "left_duty") == 0) {
-            g_left_duty = value;
-          } else if (strcmp(key, "right_duty") == 0) {
-            g_right_duty = value;
-          }
+          if (strcmp(key, "kp") == 0) { g_kp = value; updated = true; }
+          else if (strcmp(key, "ki") == 0) { g_ki = value; updated = true; }
+          else if (strcmp(key, "kd") == 0) { g_kd = value; updated = true; }
+          else if (strcmp(key, "left_speed") == 0) { g_left_speed = value; updated = true; }
+          else if (strcmp(key, "right_speed") == 0) { g_right_speed = value; updated = true; }
+          else if (strcmp(key, "left_duty") == 0) { g_left_duty = value; updated = true; }
+          else if (strcmp(key, "right_duty") == 0) { g_right_duty = value; updated = true; }
+          if (updated) std::cout << "[Params] " << key << "=" << value << std::endl;
         }
       }
       std::this_thread::sleep_for(10ms);
