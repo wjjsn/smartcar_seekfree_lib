@@ -34,7 +34,7 @@ add_subdirectory(Motherboard_Demo/E08_01_uvc_cmera_ips200_display_demo)
 add_subdirectory(Motherboard_Demo/E09_01_tflite_picture_classic)
 add_subdirectory(Motherboard_Demo/E09_02_tflite_camera_classic)
 add_subdirectory(Motherboard_Demo/opencv_check)
-
+add_subdirectory(Motherboard_Demo/pid-test)
 add_subdirectory(Motherboard_Demo/camera_send2pc)
 
 execute_process(
