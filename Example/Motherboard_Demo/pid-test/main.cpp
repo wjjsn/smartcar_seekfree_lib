@@ -46,6 +46,8 @@ int main(int argc, char **argv) {
   server_addr.sin_addr.s_addr = inet_addr("192.168.1.123");
 
   connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
+  printf("TCP connect called\n");
+  fflush(stdout);
 
   int loop_count = 0;
   while (g_running) {
@@ -59,13 +61,13 @@ int main(int argc, char **argv) {
         char key[32] = {0};
         int value = 0;
         if (sscanf(buf, "%31[^:]:%d", key, &value) == 2) {
-          if (strcmp(key, "kp") == 0) g_kp = value;
-          else if (strcmp(key, "ki") == 0) g_ki = value;
-          else if (strcmp(key, "kd") == 0) g_kd = value;
-          else if (strcmp(key, "left_speed") == 0) g_left_speed = value;
-          else if (strcmp(key, "right_speed") == 0) g_right_speed = value;
-          else if (strcmp(key, "left_duty") == 0) g_left_duty = value;
-          else if (strcmp(key, "right_duty") == 0) g_right_duty = value;
+          if (strcmp(key, "kp") == 0) { g_kp = value; printf("set kp=%d\n", value); fflush(stdout); }
+          else if (strcmp(key, "ki") == 0) { g_ki = value; printf("set ki=%d\n", value); fflush(stdout); }
+          else if (strcmp(key, "kd") == 0) { g_kd = value; printf("set kd=%d\n", value); fflush(stdout); }
+          else if (strcmp(key, "left_speed") == 0) { g_left_speed = value; printf("set left_speed=%d\n", value); fflush(stdout); }
+          else if (strcmp(key, "right_speed") == 0) { g_right_speed = value; printf("set right_speed=%d\n", value); fflush(stdout); }
+          else if (strcmp(key, "left_duty") == 0) { g_left_duty = value; printf("set left_duty=%d\n", value); fflush(stdout); }
+          else if (strcmp(key, "right_duty") == 0) { g_right_duty = value; printf("set right_duty=%d\n", value); fflush(stdout); }
         }
       }
     }
