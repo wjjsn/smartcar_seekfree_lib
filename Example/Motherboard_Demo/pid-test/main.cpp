@@ -8,8 +8,6 @@
 #include <atomic>
 #include <csignal>
 using namespace std::chrono_literals;
-#define KEY_0 "/dev/zf_driver_gpio_key_0"
-#define KEY_1 "/dev/zf_driver_gpio_key_1"
 
 #define MOTOR1_DIR "/dev/zf_driver_gpio_motor_1"
 #define MOTOR1_PWM "/dev/zf_device_pwm_motor_1"
@@ -20,25 +18,22 @@ using namespace std::chrono_literals;
 #define ENCODER_1 "/dev/zf_encoder_1"
 #define ENCODER_2 "/dev/zf_encoder_2"
 
-std::mutex pid_mutex;
-volatile std::atomic<bool> running{true};
+volatile std::atomic<bool> g_running{true};
 
-std::atomic<float> left_duty{0}, right_duty{0};
-std::atomic<float> left_speed{0}, right_speed{0};
-std::atomic<float> kp{1}, ki{0}, kd{0};
+std::atomic<float> g_left_duty{0}, g_right_duty{0};
+std::atomic<float> g_left_speed{0}, g_right_speed{0};
+std::atomic<float> g_kp{1.0f}, g_ki{0.0f}, g_kd{0.0f};
 
-float kp_func(float error) { return error * kp.load(); }
-float ki_func(float error) { (void)error; return 0; }
-float kd_func(float error) { (void)error; return 0; }
+std::mutex g_pid_mutex;
+
+float pid_kp_func(float error) { return error * g_kp.load(); }
 
 int main(int argc, char **argv) {
-  signal(SIGSEGV, [](int) { running = false; });
-  signal(SIGINT, [](int) { running = false; });
+  signal(SIGSEGV, [](int) { g_running = false; });
+  signal(SIGINT, [](int) { g_running = false; });
 
-  PID left(100, +[](float error) { return (float)(error * 2.0f); }, 0, 0, 10000,
-           -10000);
-  PID right(100, +[](float error) { return (float)(error * 2.0f); }, 0, 0, 10000,
-            -10000);
+  PID left(100, pid_kp_func, 0, 0, 10000, -10000);
+  PID right(100, pid_kp_func, 0, 0, 10000, -10000);
 
   int16 left_count = 0, right_count = 0;
 
@@ -46,37 +41,39 @@ int main(int argc, char **argv) {
   try {
     tcp_socket = new TcpSocket();
     tcp_socket->connect_to_server("192.168.1.123", 1347);
+    std::cout << "[Main] TCP connected" << std::endl;
   } catch (const std::exception& e) {
     std::cerr << "[Error] TCP connection failed: " << e.what() << std::endl;
     if (tcp_socket) delete tcp_socket;
     return 1;
   }
 
-  std::thread tcp_reader([&]() {
+  std::thread tcp_reader([&tcp_socket]() {
     char recv_buffer[256] = {0};
-    while (running) {
-      if (!tcp_socket) break;
+    while (g_running) {
       ssize_t recv_len = tcp_socket->recv_data(recv_buffer, sizeof(recv_buffer) - 1);
       if (recv_len > 0) {
         recv_buffer[recv_len] = '\0';
+        std::cout << "[TCP] Received: " << recv_buffer << std::endl;
+
         char key[32] = {0};
         int value = 0;
         if (sscanf(recv_buffer, "%31[^:]:%d", key, &value) == 2) {
-          std::lock_guard<std::mutex> lock(pid_mutex);
+          std::lock_guard<std::mutex> lock(g_pid_mutex);
           if (strcmp(key, "kp") == 0) {
-            kp = value;
+            g_kp = value;
           } else if (strcmp(key, "ki") == 0) {
-            ki = value;
+            g_ki = value;
           } else if (strcmp(key, "kd") == 0) {
-            kd = value;
+            g_kd = value;
           } else if (strcmp(key, "left_speed") == 0) {
-            left_speed = value;
+            g_left_speed = value;
           } else if (strcmp(key, "right_speed") == 0) {
-            right_speed = value;
+            g_right_speed = value;
           } else if (strcmp(key, "left_duty") == 0) {
-            left_duty = value;
+            g_left_duty = value;
           } else if (strcmp(key, "right_duty") == 0) {
-            right_duty = value;
+            g_right_duty = value;
           }
         }
       }
@@ -84,42 +81,46 @@ int main(int argc, char **argv) {
     }
   });
 
-  while (running) {
-    float current_kp, current_ki, current_kd;
-    float current_left_speed, current_right_speed;
-    float current_left_duty, current_right_duty;
+  std::cout << "[Main] Starting main loop" << std::endl;
+
+  while (g_running) {
+    float left_speed_val, right_speed_val;
+    float left_duty_val, right_duty_val;
+    float ki_val, kd_val;
     {
-      std::lock_guard<std::mutex> lock(pid_mutex);
-      current_kp = kp.load();
-      current_ki = ki.load();
-      current_kd = kd.load();
-      current_left_speed = left_speed.load();
-      current_right_speed = right_speed.load();
-      current_left_duty = left_duty.load();
-      current_right_duty = right_duty.load();
+      std::lock_guard<std::mutex> lock(g_pid_mutex);
+      left_speed_val = g_left_speed.load();
+      right_speed_val = g_right_speed.load();
+      left_duty_val = g_left_duty.load();
+      right_duty_val = g_right_duty.load();
+      ki_val = g_ki.load();
+      kd_val = g_kd.load();
     }
 
-    left.set_pid(+[](float error) { return error * kp.load(); }, current_ki, current_kd);
-    right.set_pid(+[](float error) { return error * kp.load(); }, current_ki, current_kd);
-    left.set_point(current_left_speed);
-    right.set_point(current_right_speed);
+    left.set_point(left_speed_val);
+    right.set_point(right_speed_val);
+    left.set_pid(pid_kp_func, ki_val, kd_val);
+    right.set_pid(pid_kp_func, ki_val, kd_val);
 
     left_count = encoder_get_count(ENCODER_1);
     right_count = encoder_get_count(ENCODER_2);
 
-    if (current_left_duty != 0 || current_right_duty != 0) {
-      if (current_left_duty > 0) {
+    if (left_duty_val != 0 || right_duty_val != 0) {
+      std::cout << "[Main] Direct PWM mode: left=" << left_duty_val
+                << " right=" << right_duty_val << std::endl;
+
+      if (left_duty_val > 0) {
         gpio_set_level(MOTOR1_DIR, 1);
       } else {
         gpio_set_level(MOTOR1_DIR, 0);
       }
-      if (current_right_duty > 0) {
+      if (right_duty_val > 0) {
         gpio_set_level(MOTOR2_DIR, 1);
       } else {
         gpio_set_level(MOTOR2_DIR, 0);
       }
-      pwm_set_duty(MOTOR1_PWM, std::abs(current_left_duty));
-      pwm_set_duty(MOTOR2_PWM, std::abs(current_right_duty));
+      pwm_set_duty(MOTOR1_PWM, std::abs(left_duty_val));
+      pwm_set_duty(MOTOR2_PWM, std::abs(right_duty_val));
     } else {
       left.input_feedback(left_count);
       right.input_feedback(right_count);
@@ -147,6 +148,7 @@ int main(int argc, char **argv) {
     std::this_thread::sleep_for(10ms);
   }
 
+  std::cout << "[Main] Exiting" << std::endl;
   tcp_reader.join();
   delete tcp_socket;
   return 0;
