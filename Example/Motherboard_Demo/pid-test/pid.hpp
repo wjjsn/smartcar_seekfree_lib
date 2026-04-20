@@ -71,7 +71,7 @@ public:
   }
   std::ostringstream debug_output() {
     std::ostringstream debug;
-    debug << setpoint_ << ',' << speed_ << ',' << output_ << ',' << '\n';
+    debug << setpoint_ << ',' << speed_ << ',' << output_ << ','<<error_sum_;
     return debug;
   }
 };
