@@ -1,4 +1,3 @@
-#include "framebuffer.h"
 #include "pid.hpp"
 #include "zf_common_headfile.h"
 #include "zf_driver_encoder.h"
@@ -47,11 +46,10 @@ cv::Point2f calculateWheelSpeeds(float frameCenter, float trackCenter,
 // ==========================================
 // PID参数和全局变量
 // ==========================================
-float g_left_kp = 1.0f, g_left_ki = 0.0f, g_left_kd = 0.0f;
-float g_right_kp = 1.0f, g_right_ki = 0.0f, g_right_kd = 0.0f;
+float g_left_kp = 7.48f, g_left_ki = 4.23f, g_left_kd = 0.0f;
+float g_right_kp = 5.71f, g_right_ki = 4.01f, g_right_kd = 0.0f;
 
 volatile float g_left_target_speed = 0.0f, g_right_target_speed = 0.0f;
-volatile float g_left_duty = 0.0f, g_right_duty = 0.0f;
 
 volatile sig_atomic_t g_running = 1;
 
@@ -67,8 +65,8 @@ float right_kp_func(float error) { return error * g_right_kp; }
 int convert_to_output(int value) { return value + 5000; }
 
 void *pid_thread(void *) {
-  PID left_pid(100, left_kp_func, 0, 0, -5000, 5000);
-  PID right_pid(100, right_kp_func, 0, 0, -5000, 5000);
+  PID left_pid(100, left_kp_func, g_left_ki, g_left_kd, -5000, 5000);
+  PID right_pid(100, right_kp_func, g_right_ki, g_right_kd, -5000, 5000);
   left_pid.set_integral_limit(23333, -23333);
   right_pid.set_integral_limit(23333, -23333);
 
@@ -81,13 +79,8 @@ void *pid_thread(void *) {
 
     left_pid.set_point(g_left_target_speed);
     right_pid.set_point(g_right_target_speed);
-    left_pid.set_pid(left_kp_func, g_left_ki, g_left_kd);
-    right_pid.set_pid(right_kp_func, g_right_ki, g_right_kd);
 
-    if (g_left_duty != 0 || g_right_duty != 0) {
-      pwm_set_duty(MOTOR1_PWM, convert_to_output((int)g_left_duty));
-      pwm_set_duty(MOTOR2_PWM, convert_to_output((int)g_right_duty));
-    } else {
+    {
       left_pid.input_feedback((float)-lc);
       right_pid.input_feedback((float)rc);
 
@@ -97,11 +90,11 @@ void *pid_thread(void *) {
       pwm_set_duty(MOTOR1_PWM, convert_to_output((int)left_output));
       pwm_set_duty(MOTOR2_PWM, convert_to_output((int)right_output));
 
-      printf("set_point: left=%.1f right=%.1f | pid_out: "
-             "left=%.2f right=%.2f\r",
-             g_left_target_speed, g_right_target_speed, left_output,
-             right_output);
-      fflush(stdout);
+      // printf("set_point: left=%.1f right=%.1f | pid_out: "
+      //        "left=%.2f right=%.2f\r",
+      //        g_left_target_speed, g_right_target_speed, left_output,
+      //        right_output);
+      // fflush(stdout);
     }
 
     usleep(10000);
@@ -128,7 +121,8 @@ int main(int argc, char **argv) {
   cap.set(cv::CAP_PROP_FPS, 180);
 
   std::cout << "Starting Line Follower with PID..." << std::endl;
-  std::cout << "Resolution: " << FRAME_WIDTH << "x" << FRAME_HEIGHT << std::endl;
+  std::cout << "Resolution: " << FRAME_WIDTH << "x" << FRAME_HEIGHT
+            << std::endl;
   std::cout << "ROI Height: " << ROI_HEIGHT << " pixels" << std::endl;
 
   pthread_t pid_tid;
@@ -142,19 +136,6 @@ int main(int argc, char **argv) {
     if (frame.empty())
       break;
 
-    if (0 == gpio_get_level(KEY_0)) {
-      g_left_kp += 0.1f;
-      while (0 == gpio_get_level(KEY_0))
-        ;
-      printf("left_kp=%.2f\r\n", (double)g_left_kp);
-    }
-    if (0 == gpio_get_level(KEY_1)) {
-      g_right_kp += 0.1f;
-      while (0 == gpio_get_level(KEY_1))
-        ;
-      printf("right_kp=%.2f\r\n", (double)g_right_kp);
-    }
-
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
     cv::Rect roiRect(0, ROI_START_ROW, FRAME_WIDTH, ROI_HEIGHT);
     cv::Mat roi = gray(roiRect);
@@ -163,20 +144,20 @@ int main(int argc, char **argv) {
     cv::Moments m = cv::moments(binary, true);
     if (m.m00 > 0) {
       targetX = static_cast<int>(m.m10 / m.m00);
+      cv::Point2f speeds =
+          calculateWheelSpeeds((float)FRAME_WIDTH / 2.0f, (float)targetX,
+                               BASE_SPEED, TURN_SENSITIVITY);
+      std::cout << "\rTrack Center X: " << targetX
+                << " | Target Speed: L=" << speeds.x << " R=" << speeds.y
+                << "    " << std::flush;
+      g_left_target_speed = speeds.y;
+      g_right_target_speed = speeds.x;
     } else {
+      g_left_target_speed = g_right_target_speed = 0;
       std::cout << "Line lost!" << std::endl;
     }
 
-    cv::Point2f speeds =
-        calculateWheelSpeeds((float)FRAME_WIDTH / 2.0f, (float)targetX,
-                             BASE_SPEED, TURN_SENSITIVITY);
-
-    g_left_target_speed = speeds.x;
-    g_right_target_speed = speeds.y;
-
-    std::cout << "\rTrack Center X: " << targetX
-              << " | Target Speed: L=" << speeds.x << " R=" << speeds.y
-              << "    " << std::flush;
+    usleep(10000);
   }
 
   pthread_join(pid_tid, NULL);
