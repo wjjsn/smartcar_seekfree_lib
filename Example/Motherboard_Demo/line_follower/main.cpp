@@ -1,5 +1,7 @@
 #include "framebuffer.h"
+#include "pid.hpp"
 #include "zf_common_headfile.h"
+#include "zf_driver_encoder.h"
 #include "zf_driver_gpio.h"
 #include <iostream>
 #include <opencv2/opencv.hpp>
@@ -13,6 +15,9 @@
 
 #define MOTOR2_DIR "/dev/zf_driver_gpio_motor_2"
 #define MOTOR2_PWM "/dev/zf_device_pwm_motor_2"
+
+#define ENCODER_1 "/dev/zf_encoder_1"
+#define ENCODER_2 "/dev/zf_encoder_2"
 // ==========================================
 // 配置参数
 // ==========================================
@@ -70,9 +75,13 @@ cv::Point2f calculateWheelSpeeds(float frameCenter, float trackCenter,
   return cv::Point2f(leftSpeed, rightSpeed);
 }
 
-// ==========================================
-// 主程序
-// ==========================================
+float g_kp = 1.0f, g_ki = 0.0f, g_kd = 0.0f;
+
+float left_kp_func(float error) { return error * g_kp; }
+float right_kp_func(float error) { return error * g_kp; }
+
+int convert_to_output(int value) { return value + 5000; }
+
 int main(int argc, char **argv) {
   // 1. 初始化摄像头
   cv::VideoCapture cap(0); // 0 号摄像头
@@ -100,8 +109,15 @@ int main(int argc, char **argv) {
   pwm_get_dev_info(MOTOR1_PWM, &motor_1_pwm_info);
   pwm_get_dev_info(MOTOR2_PWM, &motor_2_pwm_info);
 
+  PID left_pid(100, left_kp_func, 0, 0, -5000, 5000);
+  PID right_pid(100, right_kp_func, 0, 0, -5000, 5000);
+  left_pid.set_integral_limit(23333, -23333);
+  right_pid.set_integral_limit(23333, -23333);
+
   while (true) {
-    // --- A. 读取图像 ---
+    int16_t lc = encoder_get_count(ENCODER_1);
+    int16_t rc = encoder_get_count(ENCODER_2);
+
     cap >> frame;
     if (frame.empty())
       break;
@@ -136,28 +152,50 @@ int main(int argc, char **argv) {
     if (m.m00 > 0) {
       // 计算质心的 X 坐标
       targetX = static_cast<int>(m.m10 / m.m00);
-    } else {
-      // 如果全是黑色（丢线），保持上一次的坐标，或者你可以添加特殊处理
+} else {
       std::cout << "Line lost!\r" << std::endl;
     }
 
-    // --- D. 调用函数计算电机速度 ---
     cv::Point2f speeds =
         calculateWheelSpeeds((float)FRAME_WIDTH / 2.0f, (float)targetX,
                              BASE_SPEED, TURN_SENSITIVITY);
 
-    if (speeds.x < 0) {
+    left_pid.set_point(speeds.x);
+    right_pid.set_point(speeds.y);
+    left_pid.set_pid(left_kp_func, g_ki, g_kd);
+    right_pid.set_pid(right_kp_func, g_ki, g_kd);
+
+    left_pid.input_feedback((float)-lc);
+    right_pid.input_feedback((float)rc);
+
+    float left_output = left_pid.output();
+    float right_output = right_pid.output();
+
+    int left_pwm = convert_to_output((int)left_output);
+    int right_pwm = convert_to_output((int)right_output);
+
+    if (left_pwm < 5000) {
       gpio_set_level(MOTOR1_DIR, 0);
-    } else {
+      left_pwm = 5000 - left_pwm;
+    } else if (left_pwm > 5000) {
       gpio_set_level(MOTOR1_DIR, 1);
-    }
-    if (speeds.y < 0) {
-      gpio_set_level(MOTOR2_DIR, 0);
+      left_pwm = left_pwm - 5000;
     } else {
-      gpio_set_level(MOTOR2_DIR, 1);
+      left_pwm = 0;
     }
-    pwm_set_duty(MOTOR1_PWM, std::abs(speeds.x));
-    pwm_set_duty(MOTOR1_PWM, std::abs(speeds.y));
+
+    if (right_pwm < 5000) {
+      gpio_set_level(MOTOR2_DIR, 0);
+      right_pwm = 5000 - right_pwm;
+    } else if (right_pwm > 5000) {
+      gpio_set_level(MOTOR2_DIR, 1);
+      right_pwm = right_pwm - 5000;
+    } else {
+      right_pwm = 0;
+    }
+
+    pwm_set_duty(MOTOR1_PWM, left_pwm);
+    pwm_set_duty(MOTOR2_PWM, right_pwm);
     // --- E. 输出结果
     // (这里在终端打印，实际使用中需要通过串口/GPIO发送给电机驱动) --- \r
     // 表示回到行首，实现动态刷新
