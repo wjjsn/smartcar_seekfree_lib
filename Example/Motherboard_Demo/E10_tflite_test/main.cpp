@@ -20,7 +20,7 @@ int main(int, char**) {
     fprintf(stderr, "E10 TFLite Test Program\n");
     fprintf(stderr, "========================\n");
 
-    const char* model_path = "smartcar_model.tflite";
+    const char* model_path = "smartcar_model_tflm.tflite";
     const char* test_dir = "test";
 
     int fd = open(model_path, O_RDONLY);
