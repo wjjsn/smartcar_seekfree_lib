@@ -1,5 +1,8 @@
 #include "zf_common_headfile.h"
 #include <dirent.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 using namespace cv;
 
 #define MODEL_INPUT_WIDTH         96
@@ -7,65 +10,94 @@ using namespace cv;
 #define MODEL_INPUT_CHANNEL       3
 #define MODEL_INPUT_SIZE          (MODEL_INPUT_WIDTH * MODEL_INPUT_HEIGHT * MODEL_INPUT_CHANNEL)
 #define MODEL_OUTPUT_CLASS_NUM    3
-#define TFLITE_OP_RESOLVER_MAX_NUM 20
-#define TENSOR_ARENA_SIZE         (256 * 1024)
+#define TFLITE_OP_RESOLVER_MAX_NUM 100
+#define TENSOR_ARENA_SIZE         (1024 * 1024)
 
-const char* class_labels[] = {"交通工具-直行", "武器-左", "物资-右"};
+const char* class_labels[] = {"class0", "class1", "class2"};
+const char* class_dirs[] = {"class0", "class1", "class2"};
 
 int main(int, char**) {
+    fprintf(stderr, "E10 TFLite Test Program\n");
+    fprintf(stderr, "========================\n");
+
     const char* model_path = "smartcar_model.tflite";
-    const char* test_dir = "data/smartcar/test";
+    const char* test_dir = "test";
 
-    uint8_t* model_buffer = (uint8_t*)malloc(5 * 1024 * 1024);
-    if (!model_buffer) {
-        printf("Failed to allocate model buffer\n");
+    int fd = open(model_path, O_RDONLY);
+    if (fd < 0) {
+        fprintf(stderr, "ERROR: Failed to open model file: %s\n", model_path);
         return -1;
     }
 
-    FILE* fp = fopen(model_path, "rb");
-    if (!fp) {
-        printf("Failed to open model file: %s\n", model_path);
-        free(model_buffer);
+    struct stat st;
+    if (fstat(fd, &st) < 0) {
+        fprintf(stderr, "ERROR: Failed to stat model file\n");
+        close(fd);
         return -1;
     }
-    fseek(fp, 0, SEEK_END);
-    size_t model_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    fread(model_buffer, 1, model_size, fp);
-    fclose(fp);
-    printf("Model loaded: %zu bytes\n", model_size);
+    size_t model_size = st.st_size;
+
+    void* model_buffer = mmap(NULL, model_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (model_buffer == MAP_FAILED) {
+        fprintf(stderr, "ERROR: Failed to mmap model file\n");
+        close(fd);
+        return -1;
+    }
+    close(fd);
+    fprintf(stderr, "Model loaded: %zu bytes at %p\n", model_size, model_buffer);
 
     tflite::InitializeTarget();
 
     const tflite::Model* model = ::tflite::GetModel(model_buffer);
     if (!model) {
-        printf("Failed to get model from buffer\n");
-        free(model_buffer);
+        fprintf(stderr, "ERROR: Failed to parse model\n");
+        munmap(model_buffer, model_size);
         return -1;
     }
-    printf("Model pointer: %p\n", (void*)model);
-    printf("Model version: %d, expected: %d\n", model->version(), TFLITE_SCHEMA_VERSION);
+    fprintf(stderr, "Model parsed successfully, version: %d\n", model->version());
 
     tflite::MicroMutableOpResolver<TFLITE_OP_RESOLVER_MAX_NUM> resolver;
+
     resolver.AddConv2D();
     resolver.AddDepthwiseConv2D();
     resolver.AddMaxPool2D();
     resolver.AddFullyConnected();
-    resolver.AddRelu();
+    resolver.AddRelu6();
     resolver.AddSoftmax();
     resolver.AddReshape();
     resolver.AddShape();
-    resolver.AddRelu6();
+    resolver.AddSlice();
+    resolver.AddQuantize();
+    resolver.AddDequantize();
+    resolver.AddCast();
+    resolver.AddSqueeze();
+    resolver.AddExpandDims();
+    resolver.AddConcatenation();
+    resolver.AddTranspose();
+    resolver.AddStridedSlice();
+    resolver.AddPack();
+    resolver.AddRelu();
 
-    uint8_t tensor_arena[TENSOR_ARENA_SIZE];
+    void* arena_raw = nullptr;
+    if (posix_memalign(&arena_raw, 64, TENSOR_ARENA_SIZE) != 0) {
+        fprintf(stderr, "ERROR: Failed to allocate tensor arena\n");
+        munmap(model_buffer, model_size);
+        return -1;
+    }
+    uint8_t* tensor_arena = (uint8_t*)arena_raw;
+
     tflite::MicroInterpreter interpreter(model, resolver, tensor_arena, TENSOR_ARENA_SIZE);
-    if (interpreter.AllocateTensors() != kTfLiteOk) {
-        printf("Failed to allocate tensors\n");
-        free(model_buffer);
+    TfLiteStatus status = interpreter.AllocateTensors();
+
+    if (status != kTfLiteOk) {
+        fprintf(stderr, "ERROR: AllocateTensors failed with error code %d\n", status);
+        fprintf(stderr, "Note: This model may be too large or complex for TFLM\n");
+        munmap(model_buffer, model_size);
+        free(arena_raw);
         return -1;
     }
 
-    printf("Arena used: %zu bytes\n", interpreter.arena_used_bytes());
+    fprintf(stderr, "Tensor allocation successful, arena used: %zu bytes\n", interpreter.arena_used_bytes());
 
     int correct = 0;
     int total = 0;
@@ -74,10 +106,13 @@ int main(int, char**) {
 
     for (int class_idx = 0; class_idx < MODEL_OUTPUT_CLASS_NUM; class_idx++) {
         char class_dir[256];
-        snprintf(class_dir, sizeof(class_dir), "%s/%s", test_dir, class_labels[class_idx]);
+        snprintf(class_dir, sizeof(class_dir), "%s/%s", test_dir, class_dirs[class_idx]);
 
         DIR* dir = opendir(class_dir);
-        if (!dir) continue;
+        if (!dir) {
+            fprintf(stderr, "Warning: Cannot open directory %s\n", class_dir);
+            continue;
+        }
 
         struct dirent* entry;
         while ((entry = readdir(dir)) != nullptr) {
@@ -89,7 +124,10 @@ int main(int, char**) {
             snprintf(img_path, sizeof(img_path), "%s/%s", class_dir, entry->d_name);
 
             Mat src_img = imread(img_path, 1);
-            if (src_img.empty()) continue;
+            if (src_img.empty()) {
+                fprintf(stderr, "Warning: Cannot read image %s\n", img_path);
+                continue;
+            }
 
             Mat resized_img;
             resize(src_img, resized_img, Size(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT), INTER_LINEAR);
@@ -103,8 +141,9 @@ int main(int, char**) {
             float* input_data = interpreter.input(0)->data.f;
             memcpy(input_data, continuous_img.ptr<float>(), MODEL_INPUT_SIZE * sizeof(float));
 
-            if (interpreter.Invoke() != kTfLiteOk) {
-                printf("Inference failed for %s\n", img_path);
+            status = interpreter.Invoke();
+            if (status != kTfLiteOk) {
+                fprintf(stderr, "ERROR: Inference failed for %s\n", img_path);
                 continue;
             }
 
@@ -124,25 +163,24 @@ int main(int, char**) {
             if (pred_idx == class_idx) {
                 correct++;
                 class_correct[class_idx]++;
-            }
-
-            if (strcmp(class_labels[pred_idx], class_labels[class_idx]) != 0) {
-                printf("ERROR: %s -> predicted: %s, actual: %s\n",
+            } else {
+                fprintf(stderr, "ERROR: %s -> predicted: %s, actual: %s\n",
                        entry->d_name, class_labels[pred_idx], class_labels[class_idx]);
             }
         }
         closedir(dir);
     }
 
-    printf("\n========== Test Results ==========\n");
+    fprintf(stderr, "\n========== Test Results ==========\n");
     for (int i = 0; i < MODEL_OUTPUT_CLASS_NUM; i++) {
         float acc = class_counts[i] > 0 ? (100.0f * class_correct[i] / class_counts[i]) : 0;
-        printf("%s: %d/%d (%.1f%%)\n", class_labels[i], class_correct[i], class_counts[i], acc);
+        fprintf(stderr, "%s: %d/%d (%.1f%%)\n", class_labels[i], class_correct[i], class_counts[i], acc);
     }
-    printf("---------------------------------\n");
-    printf("Total: %d/%d (%.1f%%)\n", correct, total, 100.0f * correct / total);
-    printf("==================================\n");
+    fprintf(stderr, "---------------------------------\n");
+    fprintf(stderr, "Total: %d/%d (%.1f%%)\n", correct, total, total > 0 ? (100.0f * correct / total) : 0);
+    fprintf(stderr, "==================================\n");
 
-    free(model_buffer);
-    return 0;
+    munmap(model_buffer, model_size);
+    free(arena_raw);
+    _exit(0);
 }
