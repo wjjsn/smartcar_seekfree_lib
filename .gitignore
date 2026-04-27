@@ -2,3 +2,7 @@ build/
 .cache/
 .vscode/
 compile_commands.json
+*.tflite
+*.onnx
+*.pb
+*.h5
