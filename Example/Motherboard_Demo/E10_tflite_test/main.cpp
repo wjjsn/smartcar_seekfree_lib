@@ -3,25 +3,57 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <algorithm>
 using namespace cv;
 
 #define MODEL_INPUT_WIDTH         96
-#define MODEL_INPUT_HEIGHT        96
-#define MODEL_INPUT_CHANNEL       3
-#define MODEL_INPUT_SIZE          (MODEL_INPUT_WIDTH * MODEL_INPUT_HEIGHT * MODEL_INPUT_CHANNEL)
-#define MODEL_OUTPUT_CLASS_NUM    3
+#define MODEL_INPUT_HEIGHT       96
+#define MODEL_INPUT_CHANNEL      3
+#define MODEL_INPUT_SIZE         (MODEL_INPUT_WIDTH * MODEL_INPUT_HEIGHT * MODEL_INPUT_CHANNEL)
+#define MODEL_OUTPUT_CLASS_NUM   3
 #define TFLITE_OP_RESOLVER_MAX_NUM 100
-#define TENSOR_ARENA_SIZE         (1024 * 1024)
+#define TENSOR_ARENA_SIZE        (1024 * 1024)
 
 const char* class_labels[] = {"class0", "class1", "class2"};
 const char* class_dirs[] = {"class0", "class1", "class2"};
+
+static Mat resize_with_lanczos(const Mat& src, int width, int height) {
+    Mat dst;
+    resize(src, dst, Size(width, height), INTER_LANCZOS4);
+    return dst;
+}
+
+static Mat rotate_180(const Mat& src) {
+    Mat dst;
+    flip(src, dst, -1);
+    return dst;
+}
+
+static Mat preprocess_image(const char* img_path, bool is_warped) {
+    (void)is_warped;
+    Mat src_img = imread(img_path, 1);
+    if (src_img.empty()) {
+        return Mat();
+    }
+
+    Mat img = src_img;
+    img = resize_with_lanczos(img, MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT);
+
+    img.convertTo(img, CV_32FC3, 1.0f / 127.5f);
+    subtract(img, Scalar(1.0f, 1.0f, 1.0f), img);
+
+    cvtColor(img, img, cv::COLOR_BGR2RGB);
+
+    return img;
+}
 
 int main(int, char**) {
     fprintf(stderr, "E10 TFLite Test Program\n");
     fprintf(stderr, "========================\n");
 
     const char* model_path = "smartcar_model_tflm.tflite";
-    const char* test_dir = "test";
+    const char* test_dir = "test_warped";
+    bool use_warped_prefix = true;
 
     int fd = open(model_path, O_RDONLY);
     if (fd < 0) {
@@ -120,22 +152,16 @@ int main(int, char**) {
             if (!ext) continue;
             if (strcmp(ext, ".jpg") != 0 && strcmp(ext, ".png") != 0 && strcmp(ext, ".jpeg") != 0) continue;
 
+            bool is_warped = (strncmp(entry->d_name, "warped_", 8) == 0);
+
             char img_path[512];
             snprintf(img_path, sizeof(img_path), "%s/%s", class_dir, entry->d_name);
 
-            Mat src_img = imread(img_path, 1);
-            if (src_img.empty()) {
+            Mat resized_img = preprocess_image(img_path, is_warped);
+            if (resized_img.empty()) {
                 fprintf(stderr, "Warning: Cannot read image %s\n", img_path);
                 continue;
             }
-
-            Mat resized_img;
-            resize(src_img, resized_img, Size(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT), INTER_LINEAR);
-
-            resized_img.convertTo(resized_img, CV_32FC3, 1.0f / 127.5f);
-            subtract(resized_img, Scalar(1.0f, 1.0f, 1.0f), resized_img);
-
-            cvtColor(resized_img, resized_img, cv::COLOR_BGR2RGB);
 
             Mat continuous_img = resized_img.isContinuous() ? resized_img : resized_img.clone();
             float* input_data = interpreter.input(0)->data.f;
