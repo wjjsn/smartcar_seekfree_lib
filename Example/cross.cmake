@@ -15,8 +15,8 @@ SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -pthread -Wall -Wno-delete-non-virtual-dtor -Wno-placement-new")
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -static-libasan -march=loongarch64 -mtune=loongarch64 -fPIC -ffunction-sections -fdata-sections")
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -static-libasan -g3 -Wall -march=loongarch64 -mtune=loongarch64 -fPIC -ffunction-sections -fdata-sections")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=loongarch64 -mtune=loongarch64 -fPIC -ffunction-sections -fdata-sections")
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3 -Wall -march=loongarch64 -mtune=loongarch64 -fPIC -ffunction-sections -fdata-sections")
 SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 
 ENDIF(CROSS_COMPILE)
