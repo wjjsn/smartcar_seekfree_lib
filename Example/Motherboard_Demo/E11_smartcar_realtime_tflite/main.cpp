@@ -346,11 +346,11 @@ int main(int, char**) {
         }
 
         draw_detection(annotated, detection);
-        imshow("SmartCar Detection", annotated);
+        // imshow("SmartCar Detection", annotated);
 
-        if (waitKey(1) == 'q') {
-            break;
-        }
+        // if (waitKey(1) == 'q') {
+        //     break;
+        // }
     }
 
     fprintf(stdout, "\n");
