@@ -1,11 +1,15 @@
 #include "zf_common_headfile.h"
+#include <algorithm>
 #include <dirent.h>
+#include <fcntl.h>
+#include <iostream>
+#include <opencv2/imgcodecs.hpp>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <algorithm>
 using namespace cv;
-
+// #define DEBUG
+const int FRAME_WIDTH = 640;
+const int FRAME_HEIGHT = 480;
 #define MODEL_INPUT_WIDTH         96
 #define MODEL_INPUT_HEIGHT       96
 #define MODEL_INPUT_CHANNEL      3
@@ -13,8 +17,9 @@ using namespace cv;
 #define MODEL_OUTPUT_CLASS_NUM   3
 #define TFLITE_OP_RESOLVER_MAX_NUM 100
 #define TENSOR_ARENA_SIZE        (1024 * 1024)
+const char *model_path = "smartcar_model.tflite";
 
-const char* class_labels[] = {"交通工具-直行", "武器-左", "物资-右"};
+const char *class_labels[] = {"car-stright", "weapon-left", "something-right"};
 
 static Mat resize_with_lanczos(const Mat& src, int width, int height) {
     Mat dst;
@@ -52,29 +57,44 @@ static Mat apply_morphology(const Mat& mask, int kernel_size = 3) {
     return result;
 }
 
-static std::vector<Point> find_corner_points(const std::vector<Point>& points) {
-    int min_sum_idx = 0, max_sum_idx = 0;
-    int min_diff_idx = 0, max_diff_idx = 0;
-    float min_sum_val = points[0].x + points[0].y;
-    float max_sum_val = min_sum_val;
-    float min_diff_val = points[0].x - points[0].y;
-    float max_diff_val = min_diff_val;
+static std::vector<Point> find_corner_points(const std::vector<Point> &points) {
+  int min_sum_idx = 0, max_sum_idx = 0;
+  int min_diff_idx = 0, max_diff_idx = 0;
 
-    for (size_t i = 1; i < points.size(); i++) {
-        float s = points[i].x + points[i].y;
-        float d = points[i].x - points[i].y;
-        if (s < min_sum_val) { min_sum_val = s; min_sum_idx = i; }
-        if (s > max_sum_val) { max_sum_val = s; max_sum_idx = i; }
-        if (d < min_diff_val) { min_diff_val = d; min_diff_idx = i; }
-        if (d > max_diff_val) { max_diff_val = d; max_diff_idx = i; }
-    }
+  // np.diff(point) = y - x
+  float min_sum_val = points[0].x + points[0].y;
+  float max_sum_val = min_sum_val;
+  float min_diff_val = points[0].y - points[0].x;
+  float max_diff_val = min_diff_val;
 
-    std::vector<Point> corners(4);
-    corners[0] = points[min_sum_idx];
-    corners[1] = points[max_sum_idx];
-    corners[2] = points[min_diff_idx];
-    corners[3] = points[max_diff_idx];
-    return corners;
+  for (size_t i = 1; i < points.size(); i++) {
+    float s = points[i].x + points[i].y;
+    float d = points[i].y - points[i].x; // 严格对应 Python 的 np.diff (y - x)
+
+    if (s < min_sum_val) {
+      min_sum_val = s;
+      min_sum_idx = i;
+    } // 左上
+    if (s > max_sum_val) {
+      max_sum_val = s;
+      max_sum_idx = i;
+    } // 右下
+    if (d < min_diff_val) {
+      min_diff_val = d;
+      min_diff_idx = i;
+    } // 右上 (y-x最小)
+    if (d > max_diff_val) {
+      max_diff_val = d;
+      max_diff_idx = i;
+    } // 左下 (y-x最大)
+  }
+
+  std::vector<Point> corners(4);
+  corners[0] = points[min_sum_idx];  // tl
+  corners[1] = points[min_diff_idx]; // tr
+  corners[2] = points[max_sum_idx];  // br
+  corners[3] = points[max_diff_idx]; // bl
+  return corners;
 }
 
 static void compute_top_edge_points(const Point2f* src_pts, float phys_width, float phys_img_height,
@@ -97,20 +117,22 @@ static void compute_top_edge_points(const Point2f* src_pts, float phys_width, fl
     pt_top_right = top_points_image[1];
 }
 
-static Mat perspective_crop(const Mat& img, const Point2f* corners, const Point2f& pt_top_left, const Point2f& pt_top_right) {
-    Point2f src_quad[4] = { corners[0], corners[1], corners[2], corners[3] };
-    float width = norm(corners[1] - corners[0]);
-    float height = norm(pt_top_left - corners[0]);
-    Point2f dst_quad[4] = {
-        Point2f(0, 0),
-        Point2f(width, 0),
-        Point2f(width, height),
-        Point2f(0, height)
-    };
-    Mat M_warp = getPerspectiveTransform(src_quad, dst_quad);
-    Mat warped;
-    warpPerspective(img, warped, M_warp, Size((int)width, (int)height));
-    return warped;
+static Mat perspective_crop(const Mat &img, const Point2f *corners,
+                            const Point2f &pt_top_left,
+                            const Point2f &pt_top_right) {
+  // 严格对应 Python 的 src_quad = [tl, tr, pt_top_right, pt_top_left]
+  Point2f src_quad[4] = {corners[0], corners[1], pt_top_right, pt_top_left};
+
+  float width = norm(corners[1] - corners[0]);   // norm(tr - tl)
+  float height = norm(pt_top_left - corners[0]); // norm(pt_top_left - tl)
+
+  Point2f dst_quad[4] = {Point2f(0, 0), Point2f(width, 0),
+                         Point2f(width, height), Point2f(0, height)};
+
+  Mat M_warp = getPerspectiveTransform(src_quad, dst_quad);
+  Mat warped;
+  warpPerspective(img, warped, M_warp, Size((int)width, (int)height));
+  return warped;
 }
 
 static A4DetectionResult detect_a4_points(const Mat& img) {
@@ -135,8 +157,8 @@ static A4DetectionResult detect_a4_points(const Mat& img) {
 
     int w = img.cols;
     float center_ratio = 0.5f;
-    float min_area = 1000;
-    int min_width = 40, min_height = 20;
+    float min_area = 500;
+    int min_width = 20, min_height = 10;
     float center_left = (0.5f - center_ratio / 2) * w;
     float center_right = (0.5f + center_ratio / 2) * w;
 
@@ -165,8 +187,8 @@ static A4DetectionResult detect_a4_points(const Mat& img) {
 
     std::vector<Point> corners = find_corner_points(hull);
     result.tl = corners[0];
-    result.tr = corners[2];
-    result.br = corners[1];
+    result.tr = corners[1];
+    result.br = corners[2];
     result.bl = corners[3];
     result.contour = hull;
 
@@ -201,161 +223,196 @@ static void draw_detection(Mat& result, const A4DetectionResult& detection) {
     circle(result, detection.pt_top_right, 3, Scalar(0, 0, 255), -1);
 }
 
-int main(int, char**) {
-    fprintf(stderr, "E11 SmartCar Realtime TFLite Test Program\n");
-    fprintf(stderr, "============================================\n");
+int main(int, char **) {
 
-    const char* model_path = "smartcar_model_tflm.tflite";
+  int fd = open(model_path, O_RDONLY);
+  if (fd < 0) {
+    fprintf(stderr, "ERROR: Failed to open model file: %s\n", model_path);
+    return -1;
+  }
 
-    int fd = open(model_path, O_RDONLY);
-    if (fd < 0) {
-        fprintf(stderr, "ERROR: Failed to open model file: %s\n", model_path);
-        return -1;
-    }
-
-    struct stat st;
-    if (fstat(fd, &st) < 0) {
-        fprintf(stderr, "ERROR: Failed to stat model file\n");
-        close(fd);
-        return -1;
-    }
-    size_t model_size = st.st_size;
-
-    void* model_buffer = mmap(NULL, model_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (model_buffer == MAP_FAILED) {
-        fprintf(stderr, "ERROR: Failed to mmap model file\n");
-        close(fd);
-        return -1;
-    }
+  struct stat st;
+  if (fstat(fd, &st) < 0) {
+    fprintf(stderr, "ERROR: Failed to stat model file\n");
     close(fd);
-    fprintf(stderr, "Model loaded: %zu bytes at %p\n", model_size, model_buffer);
+    return -1;
+  }
+  size_t model_size = st.st_size;
 
-    tflite::InitializeTarget();
+  void *model_buffer = mmap(NULL, model_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  if (model_buffer == MAP_FAILED) {
+    fprintf(stderr, "ERROR: Failed to mmap model file\n");
+    close(fd);
+    return -1;
+  }
+  close(fd);
+  fprintf(stderr, "Model loaded: %zu bytes at %p\n", model_size, model_buffer);
 
-    const tflite::Model* model = ::tflite::GetModel(model_buffer);
-    if (!model) {
-        fprintf(stderr, "ERROR: Failed to parse model\n");
-        munmap(model_buffer, model_size);
-        return -1;
-    }
-    fprintf(stderr, "Model parsed successfully, version: %d\n", model->version());
+  tflite::InitializeTarget();
 
-    tflite::MicroMutableOpResolver<TFLITE_OP_RESOLVER_MAX_NUM> resolver;
+  const tflite::Model *model = ::tflite::GetModel(model_buffer);
+  if (!model) {
+    fprintf(stderr, "ERROR: Failed to parse model\n");
+    munmap(model_buffer, model_size);
+    return -1;
+  }
+  fprintf(stderr, "Model parsed successfully, version: %d\n", model->version());
 
-    resolver.AddConv2D();
-    resolver.AddDepthwiseConv2D();
-    resolver.AddMaxPool2D();
-    resolver.AddFullyConnected();
-    resolver.AddRelu6();
-    resolver.AddSoftmax();
-    resolver.AddReshape();
-    resolver.AddShape();
-    resolver.AddSlice();
-    resolver.AddQuantize();
-    resolver.AddDequantize();
-    resolver.AddCast();
-    resolver.AddSqueeze();
-    resolver.AddExpandDims();
-    resolver.AddConcatenation();
-    resolver.AddTranspose();
-    resolver.AddStridedSlice();
-    resolver.AddPack();
-    resolver.AddRelu();
+  tflite::MicroMutableOpResolver<TFLITE_OP_RESOLVER_MAX_NUM> resolver;
 
-    void* arena_raw = nullptr;
-    if (posix_memalign(&arena_raw, 64, TENSOR_ARENA_SIZE) != 0) {
-        fprintf(stderr, "ERROR: Failed to allocate tensor arena\n");
-        munmap(model_buffer, model_size);
-        return -1;
-    }
-    uint8_t* tensor_arena = (uint8_t*)arena_raw;
+  resolver.AddConv2D();
+  resolver.AddDepthwiseConv2D();
+  resolver.AddMaxPool2D();
+  resolver.AddFullyConnected();
+  resolver.AddRelu6();
+  resolver.AddSoftmax();
+  resolver.AddReshape();
+  resolver.AddShape();
+  resolver.AddSlice();
+  resolver.AddQuantize();
+  resolver.AddDequantize();
+  resolver.AddCast();
+  resolver.AddSqueeze();
+  resolver.AddExpandDims();
+  resolver.AddConcatenation();
+  resolver.AddTranspose();
+  resolver.AddStridedSlice();
+  resolver.AddPack();
+  resolver.AddRelu();
 
-    tflite::MicroInterpreter interpreter(model, resolver, tensor_arena, TENSOR_ARENA_SIZE);
-    TfLiteStatus status = interpreter.AllocateTensors();
+  void *arena_raw = nullptr;
+  if (posix_memalign(&arena_raw, 64, TENSOR_ARENA_SIZE) != 0) {
+    fprintf(stderr, "ERROR: Failed to allocate tensor arena\n");
+    munmap(model_buffer, model_size);
+    return -1;
+  }
+  uint8_t *tensor_arena = (uint8_t *)arena_raw;
 
-    if (status != kTfLiteOk) {
-        fprintf(stderr, "ERROR: AllocateTensors failed with error code %d\n", status);
-        munmap(model_buffer, model_size);
-        free(arena_raw);
-        return -1;
-    }
+  tflite::MicroInterpreter interpreter(model, resolver, tensor_arena,
+                                       TENSOR_ARENA_SIZE);
+  TfLiteStatus status = interpreter.AllocateTensors();
 
-    fprintf(stderr, "Tensor allocation successful, arena used: %zu bytes\n", interpreter.arena_used_bytes());
-
-    if (uvc_camera_init("/dev/video0") < 0) {
-        fprintf(stderr, "ERROR: Failed to init camera\n");
-        munmap(model_buffer, model_size);
-        free(arena_raw);
-        return -1;
-    }
-    fprintf(stderr, "Camera initialized successfully\n");
-
-    fprintf(stderr, "Press 'q' to quit\n");
-
-    int frame_count = 0;
-    while (true) {
-        frame_count++;
-
-        if (wait_image_refresh() < 0) {
-            fprintf(stderr, "Frame %d: camera error\n", frame_count);
-            break;
-        }
-
-        if (frame_rgb.empty()) {
-            fprintf(stderr, "Frame %d: empty frame\n", frame_count);
-            continue;
-        }
-
-        Mat annotated = frame_rgb.clone();
-        A4DetectionResult detection = detect_a4_points(frame_rgb);
-
-        if (detection.success) {
-            Point2f corners[4] = { detection.tl, detection.tr, detection.br, detection.bl };
-            Mat warped = perspective_crop(frame_rgb, corners, detection.pt_top_left, detection.pt_top_right);
-            warped = rotate_180(warped);
-
-            Mat preprocessed = preprocess_for_model(warped);
-            Mat continuous_img = preprocessed.isContinuous() ? preprocessed : preprocessed.clone();
-
-            float* input_data = interpreter.input(0)->data.f;
-            memcpy(input_data, continuous_img.ptr<float>(), MODEL_INPUT_SIZE * sizeof(float));
-
-            status = interpreter.Invoke();
-            if (status == kTfLiteOk) {
-                float* output_data = interpreter.output(0)->data.f;
-
-                int pred_idx = 0;
-                float max_val = output_data[0];
-                for (int i = 1; i < MODEL_OUTPUT_CLASS_NUM; i++) {
-                    if (output_data[i] > max_val) {
-                        max_val = output_data[i];
-                        pred_idx = i;
-                    }
-                }
-
-                fprintf(stdout, "\r[%d] %s: %.4f   ", frame_count, class_labels[pred_idx], max_val);
-                fflush(stdout);
-
-                char text[128];
-                snprintf(text, sizeof(text), "%s: %.2f", class_labels[pred_idx], max_val);
-                putText(annotated, text, Point(10, 30), FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
-            }
-        } else {
-            fprintf(stdout, "\r[%d] No detection         ", frame_count);
-            fflush(stdout);
-        }
-
-        draw_detection(annotated, detection);
-        // imshow("SmartCar Detection", annotated);
-
-        // if (waitKey(1) == 'q') {
-        //     break;
-        // }
-    }
-
-    fprintf(stdout, "\n");
-    destroyAllWindows();
+  if (status != kTfLiteOk) {
+    fprintf(stderr, "ERROR: AllocateTensors failed with error code %d\n",
+            status);
     munmap(model_buffer, model_size);
     free(arena_raw);
-    _exit(0);
+    return -1;
+  }
+
+  fprintf(stderr, "Tensor allocation successful, arena used: %zu bytes\n",
+          interpreter.arena_used_bytes());
+
+  VideoCapture cap;
+  cap.open("/dev/video0");
+
+  if (!cap.isOpened()) {
+    printf("find uvc camera error.\r\n");
+    fprintf(stderr, "ERROR: Failed to init camera\n");
+    munmap(model_buffer, model_size);
+    free(arena_raw);
+    return -1;
+  } else {
+    printf("find uvc camera Successfully.\r\n");
+  }
+
+  cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M', 'J', 'P', 'G')); // 设置格式
+  cap.set(cv::CAP_PROP_FRAME_WIDTH, FRAME_WIDTH);
+  cap.set(cv::CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT);
+  cap.set(CAP_PROP_FPS, UVC_FPS); // 显示屏幕帧率
+
+  printf("get uvc width = %f.\r\n", cap.get(CAP_PROP_FRAME_WIDTH));
+  printf("get uvc height = %f.\r\n", cap.get(CAP_PROP_FRAME_HEIGHT));
+  printf("get uvc fps = %f.\r\n", cap.get(CAP_PROP_FPS));
+
+  fprintf(stderr, "Camera initialized successfully\n");
+
+  fprintf(stderr, "Press 'q' to quit\n");
+
+  int frame_count = 0;
+  while (true) {
+    frame_count++;
+#ifdef DEBUG
+    if (frame_count > 100) {
+      break;
+    }
+#endif
+    Mat annotated;
+    cap >> annotated;
+    if (annotated.empty()) {
+      continue;
+    }
+    A4DetectionResult detection = detect_a4_points(annotated);
+
+    if (detection.success) {
+      Point2f corners[4] = {detection.tl, detection.tr, detection.br,
+                            detection.bl};
+#ifdef DEBUG
+      std::cout << "Detected corners: " << "(" << corners[0].x << ", "
+                << corners[0].y << ")" << ", (" << corners[1].x << ", "
+                << corners[1].y << ")" << ", (" << corners[2].x << ", "
+                << corners[2].y << ")" << ", (" << corners[3].x << ", "
+                << corners[3].y << ")" << std::endl;
+#endif
+      Mat warped = perspective_crop(annotated, corners, detection.pt_top_left,
+                                    detection.pt_top_right);
+      warped = rotate_180(warped);
+      Mat preprocessed = preprocess_for_model(warped);
+      Mat continuous_img =
+          preprocessed.isContinuous() ? preprocessed : preprocessed.clone();
+
+#ifdef DEBUG
+      imwrite("raw" + std::to_string(frame_count) + ".jpg", annotated);
+      imwrite("warped" + std::to_string(frame_count) + ".jpg", warped);
+      imwrite("preprocessed" + std::to_string(frame_count) + ".jpg",
+              preprocessed);
+      imwrite("continuous_img" + std::to_string(frame_count) + ".jpg",
+              continuous_img);
+#endif
+      float *input_data = interpreter.input(0)->data.f;
+      memcpy(input_data, continuous_img.ptr<float>(),
+             MODEL_INPUT_SIZE * sizeof(float));
+
+      status = interpreter.Invoke();
+      if (status == kTfLiteOk) {
+        float *output_data = interpreter.output(0)->data.f;
+
+        int pred_idx = 0;
+        float max_val = output_data[0];
+        for (int i = 1; i < MODEL_OUTPUT_CLASS_NUM; i++) {
+          if (output_data[i] > max_val) {
+            max_val = output_data[i];
+            pred_idx = i;
+          }
+        }
+
+        fprintf(stdout, "\r[%d] %s: %.4f   ", frame_count,
+                class_labels[pred_idx], max_val);
+        fflush(stdout);
+#ifdef DEBUG
+        char text[128];
+        snprintf(text, sizeof(text), "%s: %.2f", class_labels[pred_idx],
+                 max_val);
+        putText(annotated, text, Point(10, 30), FONT_HERSHEY_SIMPLEX, 1,
+                Scalar(0, 255, 0), 2);
+#endif
+      }else {
+        fprintf(stderr, "ERROR: Invoke failed with error code %d\n", status);
+      }
+    } else {
+      fprintf(stdout, "\r[%d] No detection         ", frame_count);
+      fflush(stdout);
+    }
+
+#ifdef DEBUG
+        draw_detection(annotated, detection);
+        imwrite("draw_detection" + std::to_string(frame_count) + ".jpg",
+                annotated);
+#endif
+  }
+
+  fprintf(stdout, "\n");
+  munmap(model_buffer, model_size);
+  free(arena_raw);
+  _exit(0);
 }
