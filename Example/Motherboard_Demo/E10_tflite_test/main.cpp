@@ -51,7 +51,7 @@ int main(int, char**) {
     fprintf(stderr, "E10 TFLite Test Program\n");
     fprintf(stderr, "========================\n");
 
-    const char* model_path = "smartcar_model_tflm.tflite";
+    const char* model_path = "smartcar_model.tflite";
     const char* test_dir = "test_warped";
     bool use_warped_prefix = true;
 
