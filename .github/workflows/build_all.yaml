@@ -36,15 +36,6 @@ jobs:
         run: |
           docker compose -f .devcontainer/docker-compose.yml exec -T loongson_devcontainer fish -c 'cd /workspace && just all'
 
-      # 4. 把编译产物从容器中拷贝到虚拟机本地
-      # 假设容器内部的编译产物存放在 /build/output 路径下
-      # 我们将其拷贝到虚拟机的 ./dist 目录下
-      - name: Extract Artifacts from Container
-        run: |
-          mkdir -p dist
-          docker compose -f .devcontainer/docker-compose.yml cp loongson_devcontainer:/workspace/buildroot-2405/output/images/. ./dist/
-          docker compose -f .devcontainer/docker-compose.yml cp loongson_devcontainer:/workspace/build/image.itb ./dist/
-
       # 6. 关闭并清理 Docker 容器，释放空间
       - name: Stop and Clean Containers
         run: |
@@ -58,6 +49,6 @@ jobs:
           name: "待发布的临时草稿"
           draft: true
           files: |  # 这里填写训练生成的模型文件名
-            dist/*
+            build/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub 自动生成的临时口令，用于获取发布权限
