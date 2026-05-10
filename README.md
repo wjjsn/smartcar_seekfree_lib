@@ -1,54 +1,103 @@
-![逐飞LOGO](https://images.gitee.com/uploads/images/2019/0924/114256_eaf16bad_1699060.png "逐飞科技logo 中.png")
+# 龙芯LS2K0300智能车开源库
 
-# 逐飞科技LS2K0300开源库
+## 简介
 
-## 介绍
-逐飞科技针对参加各类竞赛以及使用逐飞科技LS2K0300核心板进行产品开发，制作的逐飞科技LS2K0300高性能开源库。
+本仓库是从[逐飞科技LS2K0300开源库](https://gitee.com/seekfree/LS2K0300_Library)fork而来的，专注于**智能车竞赛应用**，在原库基础上进行了大量定制开发。
 
-目前，该库有两个分支，master分支为LS2K0300核心板，2k0300_99pi_wifi分支为久久派。
+主要特性：
+- 智能车图像分类（TFLite实时推理）
+- PID巡线控制
+- TCP/UDP网络通信
+- UVC摄像头采集
+- 电机PWM控制
+- 自动构建FIT镜像
 
-**如果，使用久久派的同学，请自行切换分支2k0300_99pi_wifi或者切换为1.0标签，进行下载。**
+## 硬件平台
 
-**如果，使用久久派的同学，请自行切换分支2k0300_99pi_wifi或者切换为1.0标签，进行下载。**
+- **核心板**: LS2K0300久久派（LoongArch64）
+- **传感器**: USB摄像头、编码器
 
-**如果，使用久久派的同学，请自行切换分支2k0300_99pi_wifi或者切换为1.0标签，进行下载。**
+## 快速开始
 
-![image-20260106155130088](./resource/image-20260106155130088.png)
+### 1. 进入开发容器
 
-
-
-![image-20260106155151456](./resource/image-20260106155151456.png)
-
-# 1、环境准备
-
-## 1.1、**硬件环境：** 
-
-- 推荐使用本公司逐飞科技LS2K0300核心板， [点击此处购买](https://item.taobao.com/item.htm?id=1004238154955)
-- ![逐飞LS2K0300核心板](https://img.alicdn.com/imgextra/i4/2364650632/O1CN01hXbcZl1GXVQaqYeKi_!!2364650632.jpg_.webp)
-
-## 1.2、**软件开发环境：** 
-
-- UBUNTU24.04
-- 交叉编译器：loongson-gnu-toolchain-8.3-x86_64-loongarch64-linux-gnu-rc1.6.tar
-- OpenCV：4.10
-
-# 2、使用说明
-
-## 2.1、**下载开源库：** 
-
-推荐使用：
-
-```
-git clone https://gitee.com/seekfree/LS2K0300_Library.git 
+```bash
+docker compose -f .devcontainer/docker-compose.yml run --rm loongson_devcontainer bash
 ```
 
-进行克隆，到UBUNTU24.04里面。
+### 2. 编译所有示例
 
-**目前master分支为逐飞科技LS2K0300核心板，如果是使用久久派的同学，请自行切换分支到2k0300_99pi_wifi。**
+```bash
+cd /workspace
+just all
+```
 
-**一定不要下载ZIP压缩包，这个一定会导致文件权限出现问题。**
+这会依次完成：
+- 构建buildroot根文件系统
+- 编译Example中的所有示例程序
+- 生成FIT镜像到`build/`目录
 
-## 2.2、使用开源库
+### 3. 部署到设备
 
-1.  **打开工程：** 将下载好的工程文件夹打开。在打开工程前，请务必确保您的编译环境满足环境要求。如果没有安装编译环境，需要查看下面的文档资料进行安装。
-2.  **文档：**/LS2K0300_Library/【文档】说明书 芯片手册等，这个文件夹中的文档包含编译环境的安装，交叉编译工具链的使用等。
+编译产物在`build/`目录下，包括：
+- `image.itb` - FIT镜像（内核+根文件系统）
+- 打包好的根文件系统 - 各示例程序已包含在内
+
+## 示例说明
+
+| 示例 | 功能 |
+|------|------|
+| `line_follower` | 视觉巡线，使用PID控制电机 |
+| `pid-test` | TCP调参PID，实时网络调试 |
+| `E11_smartcar_realtime_tflite` | A4纸检测+TFLite图像分类推理 |
+| `E10_tflite_test` | TFLite批量图片测试 |
+| `E07_*` | UDP/TCP网络通信示例 |
+| `E08_01_uvc_cmera_ips200_display_demo` | UVC摄像头显示示例 |
+
+## 项目结构
+
+```
+.
+├── Example/                    # 示例程序
+│   ├── Motherboard_Demo/      # 主板示例
+│   │   ├── line_follower/     # 巡线程序
+│   │   ├── pid-test/          # PID调试工具
+│   │   └── E11_smartcar_realtime_tflite/  # 智能车推理
+│   └── libraries/             # 驱动库
+│       └── zf_components/     # 组件库(TFLite等)
+├── buildroot-2405/            # Buildroot根文件系统
+├── ls2k0300_linux_4.19/       # Linux内核源码
+├── .devcontainer/             # 开发容器配置
+├── justfile                   # 构建脚本
+└── build/                     # 编译输出目录
+```
+
+## 构建命令
+
+| 命令 | 说明 |
+|------|------|
+| `just all` | 完整构建（根文件系统+示例+镜像） |
+| `just build-buildroot` | 仅构建根文件系统 |
+| `just build-example` | 仅编译示例程序 |
+| `just make-fit-image` | 生成FIT镜像 |
+
+## 开发记录
+
+主要开发工作（基于git log）：
+- 完成TFLite模型在LS2K0300上的部署与实时推理
+- 实现智能车A4纸检测+透视变换+分类的完整流程
+- 调试PID参数，实现稳定巡线
+- 修复TFLM静态库AddressSanitizer问题
+- 配置GitHub Actions自动编译Release
+
+## 原仓库
+
+本仓库fork自: https://gitee.com/seekfree/LS2K0300_Library
+
+原仓库有两个分支：
+- `master` - LS2K0300核心板
+- `2k0300_99pi_wifi` - 久久派
+
+## License
+
+GPL-3.0
