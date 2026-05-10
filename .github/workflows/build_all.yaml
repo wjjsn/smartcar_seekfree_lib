@@ -27,7 +27,7 @@ jobs:
       # 这行命令会让容器执行 "just all"
       - name: Run Compile Command inside Container
         run: |
-          docker compose -f .devcontainer/docker-compose.yml exec -T loongson_devcontainer 'cd /workspace && just all'
+          docker compose -f .devcontainer/docker-compose.yml exec -T loongson_devcontainer fish -c 'cd /workspace && just all'
 
       # 4. 把编译产物从容器中拷贝到虚拟机本地
       # 假设容器内部的编译产物存放在 /build/output 路径下
