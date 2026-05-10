@@ -7,6 +7,10 @@ on:
 
   workflow_dispatch:
 
+# 🔑 核心：显式赋予 GITHUB_TOKEN 写入 Release 的权限
+permissions:
+  contents: write # 必须赋予写权限，GitHub 才能创建 Release、Tag 并上传文件
+
 jobs:
 
   build-job:
