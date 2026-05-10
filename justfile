@@ -17,6 +17,7 @@ linux-build:
 # 构建根文件系统
 build-buildroot:
     cd {{BUILDROOT_PATH}} && \
+    mkdir -p output  && \
     ./build.sh 
 
 build-example:
