@@ -2,8 +2,10 @@ name: build_all in docker
 
 on:
   push:
-    branches:
-      - 'main'  # 触发条件：当代码推送到 main 分支时
+    tags:
+      - 'v*.*.*'  # 触发条件：当代码推送一个符合语义化版本规范的 Tag 时
+    # branches:
+    #   - 'main'  # 触发条件：当代码推送到 main 分支时
 
   workflow_dispatch:
 
