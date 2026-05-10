@@ -17,7 +17,7 @@ linux-build:
 # 构建根文件系统
 build-buildroot:
     cd {{BUILDROOT_PATH}} && \
-    ./build.sh 1>/dev/null
+    ./build.sh 
 
 build-example:
     cd Example && \
