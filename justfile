@@ -41,6 +41,6 @@ make-fit-image: linux-build
 
 all:
     just install-example
-    cp buildroot-2405/output/images/* ./build/
     just make-fit-image
+    cp buildroot-2405/output/images/* ./build/
 
