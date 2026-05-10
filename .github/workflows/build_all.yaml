@@ -22,6 +22,9 @@ jobs:
         run: |
           docker compose -f .devcontainer/docker-compose.yml up -d
 
+      - name: Grant full permissions to workspace for Docker container
+        # 777 权限可以让容器内的任何 UID 顺畅地在里面 mkdir 和写入文件
+        run: chmod -R 777 ${{ github.workspace }}
       # 3. 进入容器内部执行编译命令
       # 假设你的编译容器在 docker-compose.yml 里的服务名叫 "compiler"
       # 这行命令会让容器执行 "just all"
