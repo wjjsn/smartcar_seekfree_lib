@@ -47,6 +47,9 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: "latest-build"
+          name: "待发布的临时草稿"
+          draft: true
           files: |  # 这里填写训练生成的模型文件名
             dist/*
         env:
