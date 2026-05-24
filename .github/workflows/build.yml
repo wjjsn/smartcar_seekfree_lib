@@ -1,0 +1,100 @@
+name: Build LS2K0300 Smart Car
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      # ── Docker layer cache ──────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ env.IMAGE_NAME }}-${{ github.sha }}
+          restore-keys: |
+            buildx-${{ env.IMAGE_NAME }}-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/smartcar-seekfree-lib:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      # ── Buildroot rootfs cache ──────────────────────────────────
+      - name: Cache buildroot output
+        uses: actions/cache@v4
+        id: cache-br
+        with:
+          path: |
+            buildroot-2405/output/
+          key: br-${{ github.sha }}
+          restore-keys: |
+            br-
+
+      # ── Compiled examples cache ─────────────────────────────────
+      - name: Cache example build
+        uses: actions/cache@v4
+        id: cache-ex
+        with:
+          path: |
+            Example/build/
+            build/
+          key: ex-${{ github.sha }}
+          restore-keys: |
+            ex-
+
+      # ── Build everything inside Docker ─────────────────────────
+      - name: Build all (just all)
+        run: |
+          docker compose -f .devcontainer/docker-compose.yml run --rm \
+            -e BR2_CACHE=/tmp/br-cache \
+            -v /tmp/br-cache:/tmp/br-cache \
+            loongson_devcontainer \
+            bash -c '
+              set -e
+              # restore buildroot cache if exists
+              if [ -d /tmp/br-cache/buildroot-2405/output ] && [ ! -e buildroot-2405/output/.config ]; then
+                cp -a /tmp/br-cache/buildroot-2405/output buildroot-2405/
+              fi
+
+              just all
+
+              # save buildroot cache
+              mkdir -p /tmp/br-cache
+              cp -a buildroot-2405/output /tmp/br-cache/ 2>/dev/null || true
+            '
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: build/
+          retention-days: 7
