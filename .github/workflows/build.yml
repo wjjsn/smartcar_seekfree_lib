@@ -55,7 +55,7 @@ jobs:
         with:
           path: |
             buildroot-2405/output/
-          key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/*') }}
+          key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/Config.in', 'buildroot-2405/package/**/Config.src') }}
           restore-keys: |
             br-${{ runner.os }}-
 
