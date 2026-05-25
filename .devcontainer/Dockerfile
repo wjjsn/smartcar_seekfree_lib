@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 # 设置环境变量，确保安装过程不产生交互
 ENV DEBIAN_FRONTEND=noninteractive
 
-COPY .devcontainer/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
+COPY ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
 
 RUN apt-get -o "Acquire::https::Verify-Peer=false" -o "Acquire::AllowInsecureRepositories=true" -o "Acquire::AllowDowngradeToInsecureRepositories=true" update && \
     apt-get -o "Acquire::https::Verify-Peer=false" -o "Acquire::AllowInsecureRepositories=true" -o "Acquire::AllowDowngradeToInsecureRepositories=true" install -y aria2 curl ca-certificates --no-install-recommends \
