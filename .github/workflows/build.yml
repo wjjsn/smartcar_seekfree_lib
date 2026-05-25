@@ -58,6 +58,7 @@ jobs:
           key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/Config.in', 'buildroot-2405/package/**/Config.src') }}
           restore-keys: |
             br-${{ runner.os }}-
+          enableCrossOsArchive: true
 
       # ── Compiled examples cache ─────────────────────────────────
       - name: Cache example build
@@ -70,6 +71,7 @@ jobs:
           key: ex-${{ runner.os }}-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
           restore-keys: |
             ex-${{ runner.os }}-
+          enableCrossOsArchive: true
 
       # ── Build everything inside Docker ─────────────────────────
       - name: Build all (just all)
