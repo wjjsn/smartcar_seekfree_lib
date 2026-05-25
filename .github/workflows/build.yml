@@ -55,9 +55,9 @@ jobs:
         with:
           path: |
             buildroot-2405/output/
-          key: br-${{ github.sha }}
+          key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/*') }}
           restore-keys: |
-            br-
+            br-${{ runner.os }}-
 
       # ── Compiled examples cache ─────────────────────────────────
       - name: Cache example build
@@ -67,9 +67,9 @@ jobs:
           path: |
             Example/build/
             build/
-          key: ex-${{ github.sha }}
+          key: ex-${{ runner.os }}-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
           restore-keys: |
-            ex-
+            ex-${{ runner.os }}-
 
       # ── Build everything inside Docker ─────────────────────────
       - name: Build all (just all)
