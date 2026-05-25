@@ -1,0 +1,102 @@
+name: Release (Tag)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build All
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ env.IMAGE_NAME }}-${{ github.sha }}
+          restore-keys: |
+            buildx-${{ env.IMAGE_NAME }}-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/smartcar-seekfree-lib:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Cache buildroot output
+        uses: actions/cache@v4
+        id: cache-br
+        with:
+          path: |
+            buildroot-2405/output/
+          key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/Config.in', 'buildroot-2405/package/**/Config.src') }}
+          restore-keys: |
+            br-${{ runner.os }}-
+
+      - name: Cache example build
+        uses: actions/cache@v4
+        id: cache-ex
+        with:
+          path: |
+            Example/build/
+          key: ex-${{ runner.os }}-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
+          restore-keys: |
+            ex-${{ runner.os }}-
+
+      - name: Cache Linux build
+        uses: actions/cache@v4
+        id: cache-linux
+        with:
+          path: |
+            ls2k0300_linux_4.19/arch/
+            ls2k0300_linux_4.19/vmlinux
+            ls2k0300_linux_4.19/.tmp_vmlinux
+          key: linux-${{ runner.os }}-${{ hashFiles('ls2k0300_linux_4.19/.config') }}
+          restore-keys: |
+            linux-${{ runner.os }}-
+
+      - name: Build all (just all)
+        run: |
+          docker compose -f .devcontainer/docker-compose.yml run --rm \
+            -w /workspace \
+            --user root \
+            loongson_devcontainer \
+            bash -c '
+              set -e
+              just all
+            '
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: |
+            build/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
