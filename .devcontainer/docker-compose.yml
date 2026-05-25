@@ -7,6 +7,6 @@ services:
     network_mode: host
 
     volumes:
-      - ..:/workspace:cached
-      - ../ls_2k0300_env:/opt/ls_2k0300_env:cached,ro
+      - .:/workspace:cached
+      - ./ls_2k0300_env:/opt/ls_2k0300_env:cached,ro
     command: /bin/sh -c "tail -f /dev/null"
