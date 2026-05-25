@@ -1,0 +1,89 @@
+name: Build Linux Kernel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ls2k0300_linux_4.19/**'
+      - '.devcontainer/**'
+      - 'justfile'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ls2k0300_linux_4.19/**'
+      - '.devcontainer/**'
+      - 'justfile'
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build Linux Kernel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ env.IMAGE_NAME }}-${{ github.sha }}
+          restore-keys: |
+            buildx-${{ env.IMAGE_NAME }}-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/smartcar-seekfree-lib:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Cache Linux build
+        uses: actions/cache@v4
+        id: cache-linux
+        with:
+          path: |
+            ls2k0300_linux_4.19/arch/
+            ls2k0300_linux_4.19/vmlinux
+            ls2k0300_linux_4.19/.tmp_vmlinux
+          key: linux-${{ runner.os }}-${{ hashFiles('ls2k0300_linux_4.19/.config') }}
+          restore-keys: |
+            linux-${{ runner.os }}-
+
+      - name: Build Linux kernel
+        run: |
+          docker compose -f .devcontainer/docker-compose.yml run --rm \
+            -w /workspace \
+            --user root \
+            loongson_devcontainer \
+            bash -c '
+              set -e
+              cd ls2k0300_linux_4.19
+              ./build.sh
+            '
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            ls2k0300_linux_4.19/arch/loongarch/boot/compressed/vmlinux.bin
+            ls2k0300_linux_4.19/vmlinux
+          retention-days: 7

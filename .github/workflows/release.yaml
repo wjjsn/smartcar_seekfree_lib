@@ -1,13 +1,15 @@
-name: Build LS2K0300 Smart Car
+name: Release (Tag)
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: ${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -16,7 +18,7 @@ env:
 
 jobs:
   build:
-    name: Build
+    name: Build All
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +28,6 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # ── Docker layer cache ──────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -42,13 +43,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: .devcontainer/Dockerfile
           load: true
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/smartcar-seekfree-lib:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
 
-      # ── Buildroot rootfs cache ──────────────────────────────────
       - name: Cache buildroot output
         uses: actions/cache@v4
         id: cache-br
@@ -58,50 +58,45 @@ jobs:
           key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/Config.in', 'buildroot-2405/package/**/Config.src') }}
           restore-keys: |
             br-${{ runner.os }}-
-          enableCrossOsArchive: true
 
-      # ── Compiled examples cache ─────────────────────────────────
       - name: Cache example build
         uses: actions/cache@v4
         id: cache-ex
         with:
           path: |
             Example/build/
-            build/
           key: ex-${{ runner.os }}-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
           restore-keys: |
             ex-${{ runner.os }}-
-          enableCrossOsArchive: true
 
-      # ── Build everything inside Docker ─────────────────────────
+      - name: Cache Linux build
+        uses: actions/cache@v4
+        id: cache-linux
+        with:
+          path: |
+            ls2k0300_linux_4.19/arch/
+            ls2k0300_linux_4.19/vmlinux
+            ls2k0300_linux_4.19/.tmp_vmlinux
+          key: linux-${{ runner.os }}-${{ hashFiles('ls2k0300_linux_4.19/.config') }}
+          restore-keys: |
+            linux-${{ runner.os }}-
+
       - name: Build all (just all)
         run: |
           docker compose -f .devcontainer/docker-compose.yml run --rm \
-            -e BR2_CACHE=/tmp/br-cache \
-            -v /tmp/br-cache:/tmp/br-cache \
             -w /workspace \
             --user root \
             loongson_devcontainer \
             bash -c '
               set -e
-              pwd
-              ls -la /workspace/
-              ls -la /workspace/justfile || true
-              # restore buildroot cache if exists
-              if [ -d /tmp/br-cache/buildroot-2405/output ] && [ ! -e buildroot-2405/output/.config ]; then
-                cp -a /tmp/br-cache/buildroot-2405/output buildroot-2405/
-              fi
-
               just all
-
-              # save buildroot cache
-              mkdir -p /tmp/br-cache
-              cp -a buildroot-2405/output /tmp/br-cache/ 2>/dev/null || true
             '
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: build-artifacts
-          path: build/
-          retention-days: 7
+          draft: false
+          files: |
+            build/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
