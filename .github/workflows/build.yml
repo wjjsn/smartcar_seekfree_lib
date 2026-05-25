@@ -78,6 +78,7 @@ jobs:
             -e BR2_CACHE=/tmp/br-cache \
             -v /tmp/br-cache:/tmp/br-cache \
             -w /workspace \
+            --user root \
             loongson_devcontainer \
             bash -c '
               set -e
