@@ -9,4 +9,5 @@ services:
     volumes:
       - .:/workspace:cached
       - ./ls_2k0300_env:/opt/ls_2k0300_env:cached,ro
+    working_dir: /workspace
     command: /bin/sh -c "tail -f /dev/null"
