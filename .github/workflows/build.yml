@@ -42,7 +42,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: .devcontainer/Dockerfile
           load: true
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/smartcar-seekfree-lib:latest
           cache-from: type=local,src=/tmp/.buildx-cache
@@ -55,9 +55,9 @@ jobs:
         with:
           path: |
             buildroot-2405/output/
-          key: br-${{ runner.os }}-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/Config.in', 'buildroot-2405/package/**/Config.src') }}
+          key: br-${{ runner.os }}-2405-${{ hashFiles('buildroot-2405/.config', 'buildroot-2405/package/**/Config.in', 'buildroot-2405/package/**/Config.src') }}
           restore-keys: |
-            br-${{ runner.os }}-
+            br-${{ runner.os }}-2405-
 
       # ── Compiled examples cache ─────────────────────────────────
       - name: Cache example build
@@ -67,9 +67,9 @@ jobs:
           path: |
             Example/build/
             build/
-          key: ex-${{ runner.os }}-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
+          key: ex-${{ runner.os }}-2405-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
           restore-keys: |
-            ex-${{ runner.os }}-
+            ex-${{ runner.os }}-2405-
 
       # ── Build everything inside Docker ─────────────────────────
       - name: Build all (just all)
