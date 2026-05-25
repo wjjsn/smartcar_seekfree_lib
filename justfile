@@ -32,7 +32,7 @@ install-example: build-buildroot build-example
     just build-buildroot
 
 
-# 生成fit镜像
+# 生成 fit 镜像（校验缓存用 trivial change）
 make-fit-image: linux-build
     mkdir -p build && \
     rm -f build/* && \
