@@ -82,6 +82,9 @@ jobs:
             loongson_devcontainer \
             bash -c '
               set -e
+              pwd
+              ls -la /workspace/
+              ls -la /workspace/justfile || true
               # restore buildroot cache if exists
               if [ -d /tmp/br-cache/buildroot-2405/output ] && [ ! -e buildroot-2405/output/.config ]; then
                 cp -a /tmp/br-cache/buildroot-2405/output buildroot-2405/
