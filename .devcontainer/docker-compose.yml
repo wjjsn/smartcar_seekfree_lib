@@ -2,7 +2,7 @@ services:
   loongson_devcontainer:
     build:
       context: .
-      dockerfile: .devcontainer/Dockerfile
+      dockerfile: Dockerfile
     # container_name: loongson_dev
     network_mode: host
 
