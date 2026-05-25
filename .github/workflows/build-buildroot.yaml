@@ -10,9 +10,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'buildroot-2405/**'
+      - 'ls2k0300_buildroot/**'
       - '.devcontainer/**'
       - 'justfile'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
