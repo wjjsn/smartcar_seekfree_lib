@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -18,9 +18,8 @@ env:
 
 jobs:
   build:
-    name: Build All
+    name: Build All & Release
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,3 +99,7 @@ jobs:
             build/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clear build cache
+        if: always()
+        run: rm -rf /tmp/.buildx-cache-new

@@ -1,21 +1,22 @@
 name: Build Linux Kernel
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, master]
     paths:
       - 'ls2k0300_linux_4.19/**'
       - '.devcontainer/**'
       - 'justfile'
+      - '.github/workflows/build-linux.yaml'
   pull_request:
-    branches: [main]
     paths:
       - 'ls2k0300_linux_4.19/**'
       - '.devcontainer/**'
       - 'justfile'
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: linux-build-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -23,10 +24,9 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  linux-build:
     name: Build Linux Kernel
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,3 +87,7 @@ jobs:
             ls2k0300_linux_4.19/arch/loongarch/boot/compressed/vmlinux.bin
             ls2k0300_linux_4.19/vmlinux
           retention-days: 7
+
+      - name: Clear build cache
+        if: always()
+        run: rm -rf /tmp/.buildx-cache-new

@@ -1,13 +1,13 @@
 name: Build Example
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  pull_request:
     paths:
       - 'Example/**'
       - '.devcontainer/**'
       - 'justfile'
-  pull_request:
+  push:
     branches: [main]
     paths:
       - 'Example/**'
@@ -15,7 +15,7 @@ on:
       - 'justfile'
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: example-build-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -26,7 +26,6 @@ jobs:
   build:
     name: Build Example
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,3 +84,7 @@ jobs:
           name: example-artifacts
           path: Example/build/
           retention-days: 7
+
+      - name: Clear build cache
+        if: always()
+        run: rm -rf /tmp/.buildx-cache-new
