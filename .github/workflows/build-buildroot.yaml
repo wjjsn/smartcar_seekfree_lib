@@ -79,6 +79,10 @@ jobs:
               ./build.sh
             '
 
+      - name: Fix permissions
+        run: |
+          sudo chown -R $(id -u):$(id -g) buildroot-2405/output/
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
