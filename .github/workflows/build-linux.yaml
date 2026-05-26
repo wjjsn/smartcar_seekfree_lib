@@ -41,7 +41,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ env.IMAGE_NAME }}-${{ github.sha }}
+          key: buildx-${{ env.IMAGE_NAME }}-${{ hashFiles('.devcontainer/Dockerfile', '.devcontainer/docker-compose.yml') }}
           restore-keys: |
             buildx-${{ env.IMAGE_NAME }}-
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Build Linux kernel
         run: |
-          docker compose -f .devcontainer/docker-compose.yml run --rm \
+          cd .devcontainer && docker compose run --rm \
             -w /workspace \
             --user root \
             loongson_devcontainer \
