@@ -1,0 +1,44 @@
+name: Build Example
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .devcontainer
+          push: false
+          load: true
+          tags: loongson_dev:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          cache-key: build-example-${{ hashFiles('.devcontainer/Dockerfile') }}-${{ github.run_id }}
+
+      - name: Prepare workspace
+        run: chmod -R 777 ${{ github.workspace }}
+
+      - name: Build Example
+        run: |
+          cd .devcontainer && docker compose run --rm loongson_devcontainer fish -c 'cd /workspace && just build-example'
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            Example/build
+          key: build-example-${{ hashFiles('.devcontainer/Dockerfile') }}-${{ github.run_id }}
+          restore-keys: |
+            build-example-${{ hashFiles('.devcontainer/Dockerfile') }}-
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f .devcontainer/docker-compose.yml down || true
