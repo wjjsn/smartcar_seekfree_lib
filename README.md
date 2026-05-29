@@ -1,3 +1,5 @@
+⚠️提示：逐飞写的的驱动有问题[commit哈希:05e9f2bf36fb40297598bf26a22cddfd68310d11](https://gitee.com/seekfree/LS2K0300_Library/commit/05e9f2bf36fb40297598bf26a22cddfd68310d11)，多线程环境下使用`pwm_set_duty`会导致`SIGSEGV`异常！
+
 # 龙芯LS2K0300智能车开源库
 
 ## 简介
