@@ -38,6 +38,7 @@ add_subdirectory(Motherboard_Demo/E11_smartcar_realtime_tflite)
 add_subdirectory(Motherboard_Demo/opencv_check)
 add_subdirectory(Motherboard_Demo/pid-test)
 add_subdirectory(Motherboard_Demo/line_follower)
+add_subdirectory(Motherboard_Demo/line_follower_ring)
 add_subdirectory(Motherboard_Demo/camera_send2pc)
 add_subdirectory(Motherboard_Demo/STSW-IMG013)
 
