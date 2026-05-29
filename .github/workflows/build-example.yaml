@@ -2,87 +2,44 @@ name: Build Example
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'Example/**'
-      - '.devcontainer/**'
-      - 'justfile'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'Example/**'
-      - '.devcontainer/**'
-      - 'justfile'
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+    branches:
+      - main
 
 jobs:
   build:
-    name: Build Example
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 1
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+      - uses: docker/build-push-action@v6
         with:
-          path: /tmp/.buildx-cache
-          key: buildx-${{ env.IMAGE_NAME }}-${{ github.sha }}
-          restore-keys: |
-            buildx-${{ env.IMAGE_NAME }}-
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: .devcontainer/Dockerfile
+          context: .devcontainer
+          push: false
           load: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/smartcar-seekfree-lib:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+          tags: loongson_dev:latest
+          cache-from: type=gha,key=build-example-${{ github.sha }},mode=max
+          cache-to: type=gha,key=build-example-${{ github.sha }},mode=max
 
-      - name: Cache example build
+      - name: Prepare workspace
+        run: chmod -R 777 ${{ github.workspace }}
+
+      - name: Build Example
+        run: |
+          cd .devcontainer && docker compose run --rm loongson_devcontainer fish -c 'cd /workspace && just install-example'
+
+      - name: Cache build artifacts
         uses: actions/cache@v4
-        id: cache-ex
         with:
           path: |
-            Example/build/
-          key: ex-${{ runner.os }}-${{ hashFiles('Example/CMakeLists.txt', 'Example/cross.cmake') }}
+            Example/build
+          key: build-example-${{ github.sha }}
           restore-keys: |
-            ex-${{ runner.os }}-
+            build-example-
 
-      - name: Build example
-        run: |
-          docker compose -f .devcontainer/docker-compose.yml run --rm \
-            -w /workspace \
-            --user root \
-            loongson_devcontainer \
-            bash -c '
-              set -e
-              cd Example
-              cmake -G Ninja -B build -DCMAKE_TOOLCHAIN_FILE=cross.cmake \
-                -DCMAKE_INSTALL_PREFIX=/workspace/buildroot-2405/output/target/home/root
-              cmake --build build --parallel
-            '
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: example-artifacts
-          path: Example/build/
-          retention-days: 7
+      - name: Cleanup
+        if: always()
+        run: docker compose -f .devcontainer/docker-compose.yml down || true
