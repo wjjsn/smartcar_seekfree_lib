@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 'recursive' 会递归拉取所有嵌套的子模块
+          # 如果没有嵌套，也可以直接写 true
+          submodules: 'recursive'
 
       - uses: docker/setup-buildx-action@v3
 
