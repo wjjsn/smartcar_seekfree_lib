@@ -9,7 +9,7 @@ add_executable(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
-    zf::library
+    # zf::library
     ${OpenCV_LIBS}
 )
 

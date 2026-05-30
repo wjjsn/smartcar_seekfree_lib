@@ -63,128 +63,140 @@
 // 
 // 如果发现现象与说明严重不符 请参照本文件最下方 例程常见问题说明 进行排查
 
+// $:cat /sys/kernel/debug/pwm
+// platform/16119000.pwm, 4 PWM devices
+//  pwm-0   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-1   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-2   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-3   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
 
+// platform/16118000.pwm, 7 PWM devices
+//  pwm-0   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-1   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-2   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-3   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-4   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-5   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+//  pwm-6   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+
+// platform/1611b020.pwm, 1 PWM device
+//  pwm-0   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+
+// platform/1611b010.pwm, 1 PWM device
+//  pwm-0   ((null)              ): period: 0 ns duty: 0 ns polarity: normal
+// $:ls -l /sys/class/pwm/
+// pwmchip0 -> ../../devices/platform/soc/1611b010.pwm/pwm/pwmchip0
+// pwmchip1 -> ../../devices/platform/soc/1611b020.pwm/pwm/pwmchip1
+// pwmchip2 -> ../../devices/platform/soc/16118000.pwm/pwm/pwmchip2
+// pwmchip9 -> ../../devices/platform/soc/16119000.pwm/pwm/pwmchip9
 
 // **************************** 代码区域 ****************************
-#include "zf_common_headfile.h"
+#include "pwm.hpp"
+#include <atomic>
+#include <chrono>
+#include <errno.h>
+#include <fcntl.h>
+#include <iostream>
+#include <string.h>
+#include <thread>
+#define MOTOR1_DIR "/dev/zf_driver_gpio_motor_1"
 
-#define MOTOR1_DIR   "/dev/zf_driver_gpio_motor_1"
-#define MOTOR1_PWM   "/dev/zf_device_pwm_motor_1"
+#define MOTOR2_DIR "/dev/zf_driver_gpio_motor_2"
 
-#define MOTOR2_DIR   "/dev/zf_driver_gpio_motor_2"
-#define MOTOR2_PWM   "/dev/zf_device_pwm_motor_2"
+// 持久化 fd API：两个 fd 存放在 std::atomic<int> 中，避免依赖 zf 库
+static std::atomic<int> gpio_fd1{-1};
+static std::atomic<int> gpio_fd2{-1};
 
+// 打开并保存 fd 到 atomic 中，若已有 fd 则关闭新打开的 fd
+static bool gpio_open_persistent(std::atomic<int> &afd, const char *path) {
+  int fd = open(path, O_WRONLY | O_CLOEXEC);
+  if (fd == -1) {
+    fprintf(stderr, "open(%s) failed: %s\n", path, strerror(errno));
+    return false;
+  }
 
-struct pwm_info motor_1_pwm_info;
-struct pwm_info motor_2_pwm_info;
-
-timer_fd *pit_timer;
-
-
-int8 duty = 0;
-bool dir = true;
-
-// 在设备树中，设置的10000。如果要修改，需要与设备树对应。
-#define MOTOR1_PWM_DUTY_MAX    (motor_1_pwm_info.duty_max)       
-// 在设备树中，设置的10000。如果要修改，需要与设备树对应。 
-#define MOTOR2_PWM_DUTY_MAX    (motor_2_pwm_info.duty_max)        
-
-#define MAX_DUTY        (30 )   // 最大 MAX_DUTY% 占空比
-
-void sigint_handler(int signum) 
-{
-    printf("收到Ctrl+C，程序即将退出\n");
-    exit(0);
+  int expected = -1;
+  if (!afd.compare_exchange_strong(expected, fd)) {
+    // already had a fd, close the one we just opened
+    close(fd);
+  }
+  return true;
 }
 
-void cleanup()
-{
-    // 需要先停止定时器线程，后面才能稳定关闭电机，电调，舵机等
-    pit_timer->stop();
-    printf("程序异常退出，执行清理操作\n");
-    // 关闭电机
-    pwm_set_duty(MOTOR1_PWM, 0);   
-    pwm_set_duty(MOTOR2_PWM, 0);    
+// 写入 '0'/'1' 到已保存的 fd
+static bool gpio_set_level_persistent(std::atomic<int> &afd, int level) {
+  int fd = afd.load();
+  if (fd == -1)
+    return false;
+  const char buf = (level ? '1' : '0');
+  lseek(fd, 0, SEEK_SET);
+  ssize_t n = write(fd, &buf, 1);
+  if (n != 1) {
+    fprintf(stderr, "write failed on fd %d: %s\n", fd, strerror(errno));
+    return false;
+  }
+  return true;
 }
 
-
-void pit_callback(void)
-{
-    printf("pit_callback!!!\n");
+// 关闭并清除 atomic 中的 fd
+static void gpio_close_persistent(std::atomic<int> &afd) {
+  int fd = afd.exchange(-1);
+  if (fd != -1)
+    close(fd);
 }
+int main() {
+  try {
+    // 使用持久化 fd 的方式控制方向，避免依赖 zf 库
+    gpio_open_persistent(gpio_fd1, MOTOR1_DIR);
+    gpio_open_persistent(gpio_fd2, MOTOR2_DIR);
 
-
-int main(int, char**) 
-{
-    // 获取PWM设备信息
-    pwm_get_dev_info(MOTOR1_PWM, &motor_1_pwm_info);
-    pwm_get_dev_info(MOTOR2_PWM, &motor_2_pwm_info);
-
-    // 注册清理函数
-    atexit(cleanup);
-
-    // 注册SIGINT信号的处理函数
-    signal(SIGINT, sigint_handler);
-
-
-    // // 创建一个定时器10ms周期，回调函数为pit_callback
-    // pit_ms_init(10, pit_callback);
-
-    // 创建一个定时器10ms周期，回调函数为pit_callback
-    pit_timer = new timer_fd(10, pit_callback);
-    pit_timer->start();
-
-
-    while(1)
-    {
-        if(duty >= 0)                                                           // 正转
-        {
-            gpio_set_level(MOTOR1_DIR, 1);                                      // DIR输出高电平
-            pwm_set_duty(MOTOR1_PWM, duty * (MOTOR1_PWM_DUTY_MAX / 100));       // 计算占空比
-
-            gpio_set_level(MOTOR2_DIR, 1);                                      // DIR输出高电平
-            pwm_set_duty(MOTOR2_PWM, duty * (MOTOR2_PWM_DUTY_MAX / 100));       // 计算占空比
-        }
-        else
-        {
-            gpio_set_level(MOTOR1_DIR, 0);                                      // DIR输出低电平
-            pwm_set_duty(MOTOR1_PWM, -duty * (MOTOR1_PWM_DUTY_MAX / 100));      // 计算占空比
-
-            gpio_set_level(MOTOR2_DIR, 0);                                      // DIR输出低电平
-            pwm_set_duty(MOTOR2_PWM, -duty * (MOTOR2_PWM_DUTY_MAX / 100));      // 计算占空比
-
-        }
-
-        if(dir)                                                         // 根据方向判断计数方向 本例程仅作参考
-        {
-            duty ++;                                                    // 正向计数
-            if(duty >= MAX_DUTY)                                        // 达到最大值
-            dir = false;                                                // 变更计数方向
-        }
-        else
-        {
-            duty --;                                                    // 反向计数
-            if(duty <= -MAX_DUTY)                                       // 达到最小值
-            dir = true;                                                 // 变更计数方向
-        }
-
-        system_delay_ms(50);
+    if (gpio_fd1.load() == -1 || gpio_fd2.load() == -1) {
+      std::cerr << "打开 GPIO 设备失败，请检查驱动或设备节点" << std::endl;
     }
+
+    gpio_set_level_persistent(gpio_fd1, 1);
+    gpio_set_level_persistent(gpio_fd2, 1);
+    // 1. 初始化 pwmchip1, 通道 0 (对应你的 1611b010.pwm 硬件)
+    std::cout << "正在初始化 PWM 设备..." << std::endl;
+    PWM my_pwm0(0, 0);
+    PWM my_pwm1(1, 0);
+
+    // 2. 配置：频率 2kHz (2000Hz)，占空比 30%
+    std::cout << "设置频率 17000Hz, 占空比 0%..." << std::endl;
+    if (!my_pwm0.config(17000, 0)) {
+      std::cerr << "配置 PWM0 失败！" << std::endl;
+      return -1;
+    }
+    if (!my_pwm1.config(17000, 0)) {
+      std::cerr << "配置 PWM1 失败！" << std::endl;
+      return -1;
+    }
+
+    // 3. 开启输出
+    std::cout << "开启 PWM 输出..." << std::endl;
+    my_pwm0.enable();
+    my_pwm1.enable();
+
+    // 4. 让它跑 5 秒钟
+    for (float duty = 0; duty <= 100; duty += 0.5) {
+      my_pwm0.set_duty_cycle(duty);
+      my_pwm1.set_duty_cycle(duty);
+      std::cout << "占空比: " << duty << "%" << '\r' << std::flush;
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    gpio_set_level_persistent(gpio_fd1, 0);
+    gpio_set_level_persistent(gpio_fd2, 0);
+
+    double input;
+    while (true) {
+      std::cin >> input;
+      my_pwm0.set_duty_cycle(input);
+    }
+
+  } catch (const std::exception &e) {
+    std::cerr << "发生错误: " << e.what() << std::endl;
+    return -1;
+  }
+
+  return 0;
 }
-
-// **************************** 代码区域 ****************************
-
-// *************************** 例程常见问题说明 ***************************
-// 遇到问题时请按照以下问题检查列表检查
-// 
-// 问题1：终端提示未找到xxx文件
-//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
-//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
-//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
-//
-// 问题2：电机不转或者模块输出电压无变化
-//      如果使用主板测试，主板必须要用电池供电
-//      检查模块是否正确连接供电 必须使用电源线供电 不能使用杜邦线
-//      查看程序是否正常烧录，是否下载报错，确认正常按下复位按键
-//      万用表测量对应 PWM 引脚电压是否变化，如果不变化证明程序未运行，或者引脚损坏，或者接触不良 联系技术客服
-
