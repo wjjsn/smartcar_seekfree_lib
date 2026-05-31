@@ -1,12 +1,15 @@
 #include "pid.hpp"
+#include "schedule.hpp"
 #include "zf_driver_encoder.h"
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <execinfo.h>
 #include <fcntl.h>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <pthread.h>
+#include <thread>
 #include <unistd.h>
 #define KEY_0 "/dev/zf_driver_gpio_key_0"
 #define KEY_1 "/dev/zf_driver_gpio_key_1"
@@ -26,17 +29,13 @@
 // ==========================================
 const int FRAME_WIDTH = 160;
 const int FRAME_HEIGHT = 120;
-const int BINARY_THRESHOLD = 150;
-const int ROI_START_ROW = (FRAME_HEIGHT * 2) / 3;
-const int ROI_HEIGHT = FRAME_HEIGHT - ROI_START_ROW;
-const float BASE_SPEED = 50.0f;
-float TURN_SENSITIVITY = 0.8f;
+
 
 // ==========================================
 // PID参数和全局变量
 // ==========================================
-float g_left_kp = 1.0f, g_left_ki = 0.5f, g_left_kd = 0.0f;
-float g_right_kp = 1.0f, g_right_ki = 0.5f, g_right_kd = 0.0f;
+float g_left_kp = 1.9f, g_left_ki = 2.23f, g_left_kd = 0.0f;
+float g_right_kp = 2.0f, g_right_ki = 2.01f, g_right_kd = 0.0f;
 
 volatile float g_left_target_speed = 0.0f, g_right_target_speed = 0.0f;
 
@@ -71,7 +70,7 @@ static bool gpio_set_level_persistent(std::atomic<int> &afd, int level) {
   lseek(fd, 0, SEEK_SET);
   ssize_t n = write(fd, &buf, 1);
   if (n != 1) {
-    fprintf(stderr, "write failed on fd %d: %s\n", fd, strerror(errno));
+    // fprintf(stderr, "write failed on fd %d: %s\n", fd, strerror(errno));
     return false;
   }
   return true;
@@ -125,149 +124,153 @@ void signal_handler(int sig) {
 float left_kp_func(float error) { return error * g_left_kp; }
 float right_kp_func(float error) { return error * g_right_kp; }
 
-float convert_to_output(float value) { return 0.5 * value + 50; }
+float convert_to_pwm_output(float value) { return (value + 5000.0) / 100.0; }
 
-void *pid_thread(void *) {
-  PID left_pid(10, left_kp_func, g_left_ki, g_left_kd, -100, 100);
-  PID right_pid(10, right_kp_func, g_right_ki, g_right_kd, -100, 100);
-  std::cout << "正在初始化 PWM 设备..." << std::endl;
-  PWM left(0, 0);
-  PWM right(1, 0);
+static constexpr TaskConfig myConfigs[] = {
+    {100,
+     []() {
+       static PID left_pid(100, left_kp_func, g_left_ki, g_left_kd, -1000,
+                           1000);
+       static PID right_pid(100, right_kp_func, g_right_ki, g_right_kd, -1000,
+                            1000);
 
-  // 2. 配置：频率 2kHz (2000Hz)，占空比 50%
-  std::cout << "设置频率 17000Hz, 占空比 50%..." << std::endl;
-  if (!left.config(17000, 50)) {
-    std::cerr << "配置 PWM0 失败！" << std::endl;
-    return nullptr;
-  }
-  if (!right.config(17000, 50)) {
-    std::cerr << "配置 PWM1 失败！" << std::endl;
-    return nullptr;
-  }
+       static PWM left(0, 0);
+       static PWM right(1, 0);
+       static bool initialized = false;
+       if (initialized == false) {
+         std::cout << "正在初始化 PWM 设备..." << std::endl;
 
-  std::cout << "PWM 设备初始化成功！" << std::endl;
-  std::cout << "正在打开 GPIO 设备..." << std::endl;
-  gpio_open_persistent(gpio_fd1, MOTOR1_DIR);
-  gpio_open_persistent(gpio_fd2, MOTOR2_DIR);
+         // 2. 配置：频率 2kHz (2000Hz)，占空比 50%
+         std::cout << "设置频率 17000Hz, 占空比 50%(速度为0)..." << std::endl;
+         if (!left.config(17000, 50)) {
+           std::cerr << "配置 PWM0 失败！" << std::endl;
+           return;
+         }
+         if (!right.config(17000, 50)) {
+           std::cerr << "配置 PWM1 失败！" << std::endl;
+           return;
+         }
 
-  if (gpio_fd1.load() == -1 || gpio_fd2.load() == -1) {
-    std::cerr << "打开 GPIO 设备失败，请检查驱动或设备节点" << std::endl;
-  }
-  std::cout << "GPIO 设备打开成功！" << std::endl;
+         std::cout << "PWM 设备初始化成功！" << std::endl;
+         std::cout << "正在打开 GPIO 设备..." << std::endl;
+         gpio_open_persistent(gpio_fd1, MOTOR1_DIR);
+         gpio_open_persistent(gpio_fd2, MOTOR2_DIR);
 
-  std::cout << "设置 GPIO 输出高电平..." << std::endl;
-  gpio_set_level_persistent(gpio_fd1, 1);
-  gpio_set_level_persistent(gpio_fd2, 1);
-  std::cout << "GPIO 输出设置成功！" << std::endl;
-  // 3. 开启输出
-  std::cout << "开启 PWM 输出..." << std::endl;
-  left.enable();
-  right.enable();
-  std::cout << "开启 PWM 输出成功！" << std::endl;
+         if (gpio_fd1.load() == -1 || gpio_fd2.load() == -1) {
+           std::cerr << "打开 GPIO 设备失败，请检查驱动或设备节点" << std::endl;
+           return;
+         }
+         std::cout << "GPIO 设备打开成功！" << std::endl;
 
-  std::cout << "设置 PID 积分限幅..." << std::endl;
-  left_pid.set_integral_limit(23333, -23333);
-  right_pid.set_integral_limit(23333, -23333);
-  std::cout << "PID 积分限幅设置成功！" << std::endl;
+         std::cout << "设置 GPIO 输出高电平..." << std::endl;
+         gpio_set_level_persistent(gpio_fd1, 1);
+         gpio_set_level_persistent(gpio_fd2, 1);
+         std::cout << "GPIO 输出设置成功！" << std::endl;
+         // 3. 开启输出
+         std::cout << "开启 PWM 输出..." << std::endl;
+         left.enable();
+         right.enable();
+         std::cout << "开启 PWM 输出成功！" << std::endl;
 
-  while (g_running) {
-    std::cout << "获取编码器计数..." << std::endl;
-    // int16_t lc = encoder_get_count(ENCODER_1);
-    // int16_t rc = encoder_get_count(ENCODER_2);
-    // std::cout << "编码器计数获取成功！ Left: " << lc << " Right: " << rc
-    //           << std::endl;
+         std::cout << "设置 PID 积分限幅..." << std::endl;
+         left_pid.set_integral_limit(23333, -23333);
+         right_pid.set_integral_limit(23333, -23333);
+        //  std::cout << "PID 积分限幅设置成功！" << std::endl;
 
-    std::cout << "设置 PID 目标速度..." << std::endl;
-    left_pid.set_point(g_left_target_speed);
-    right_pid.set_point(g_right_target_speed);
-    std::cout << "PID 目标速度设置成功！ Left: " << g_left_target_speed
-              << " Right: " << g_right_target_speed << std::endl;
-    {
-      std::cout << "输入反馈到 PID..." << std::endl;
-    //   left_pid.input_feedback((float)-lc);
-    //   right_pid.input_feedback((float)rc);
-    //   std::cout << "PID 输入反馈成功！ Left: " << -lc << " Right: " << -rc
-    //             << std::endl;
+         initialized = true;
+       }
+       if (!g_running) {
+         left.set_duty_cycle(50.0);
+         right.set_duty_cycle(50.0);
+         return;
+       }
+    //    std::cout << "获取编码器计数..." << std::endl;
+       int16_t lc = encoder_get_count(ENCODER_1);
+       int16_t rc = encoder_get_count(ENCODER_2);
+    //    std::cout << "编码器计数获取成功！ Left: " << lc << " Right: " << rc
+    //              << std::endl;
 
-      std::cout << "计算 PID 输出..." << std::endl;
-      float left_output = left_pid.output();
-      float right_output = right_pid.output();
-      std::cout << "PID 输出计算成功！ Left: " << left_output
-                << " Right: " << right_output << std::endl;
+    //    std::cout << "设置 PID 目标速度..." << std::endl;
+       left_pid.set_point(g_left_target_speed);
+       right_pid.set_point(g_right_target_speed);
+    //    std::cout << "PID 目标速度设置成功！ Left: " << g_left_target_speed
+    //              << " Right: " << g_right_target_speed << std::endl;
 
-      std::cout << "设置 PWM 占空比..." << std::endl;
-      left.set_duty_cycle(convert_to_output(left_output));
-      right.set_duty_cycle(convert_to_output(right_output));
-      std::cout << "PWM 占空比设置成功！ Left: "
-                << convert_to_output(left_output)
-                << "% Right: " << convert_to_output(right_output) << "%"
-                << std::endl;
-      // printf("set_point: left=%.1f right=%.1f | pid_out: "
-      //        "left=%.2f right=%.2f\r",
-      //        g_left_target_speed, g_right_target_speed, left_output,
-      //        right_output);
-      // fflush(stdout);
-    }
+       {
+        //  std::cout << "输入反馈到 PID..." << std::endl;
+         left_pid.input_feedback((float)-lc);
+         right_pid.input_feedback((float)rc);
+        //  std::cout << "PID 输入反馈成功！ Left: " << -lc << " Right:" << rc
+        //            << std::endl;
 
-    usleep(10000);
-  }
+        //  std::cout << "计算 PID 输出..." << std::endl;
+         float left_output = left_pid.output();
+         float right_output = right_pid.output();
+        //  std::cout << "PID 输出计算成功！ Left: " << left_output
+        //            << " Right: " << right_output << std::endl;
 
-  left.set_duty_cycle(50.0);
-  right.set_duty_cycle(50.0);
-  return NULL;
+        //  std::cout << "设置 PWM 占空比..." << std::endl;
+        //  left.set_duty_cycle(convert_to_pwm_output(left_output));
+        //  right.set_duty_cycle(convert_to_pwm_output(right_output));
+        //  std::cout << "PWM 占空比设置成功！ Left: "
+        //            << convert_to_pwm_output(left_output)
+        //            << "% Right: " << convert_to_pwm_output(right_output) << "%"
+        //            << std::endl;
+         //     // printf("set_point: left=%.1f right=%.1f | pid_out: "
+         //     //        "left=%.2f right=%.2f\r",
+         //     //        g_left_target_speed, g_right_target_speed,
+         //     left_output,
+         //     //        right_output);
+         //     // fflush(stdout);
+       }
+       
+     }},
+    {10, []() {
+       static cv::VideoCapture cap(0);
+       static cv::Mat frame;
+       static bool initialized = false;
+       if (!initialized) {
+         if (!cap.isOpened()) {
+           std::cerr << "Error: Could not open camera." << std::endl;
+           return;
+         }
+         cap.set(cv::CAP_PROP_FRAME_WIDTH, FRAME_WIDTH);
+         cap.set(cv::CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT);
+         cap.set(cv::CAP_PROP_FPS, 180);
+
+         initialized = true;
+       }
+       cap >> frame;
+       if (frame.empty())
+         return;
+       auto [left_speed, right_speed] =
+           find_line_lib::calculate_wheel_speeds(frame);
+       std::cout << " | Target Speed: L=" << left_speed << " R=" << right_speed
+                 << "    \r" << std::flush;
+       g_left_target_speed = left_speed;
+       g_right_target_speed = right_speed;
+     }}};
+static auto get_time() {
+  return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count());
 }
+using schedule = StaticTimerManager<get_time, myConfigs, std::size(myConfigs)>;
 
 int main(int argc, char **argv) {
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
   signal(SIGSEGV, signal_handler);
 
-  cv::VideoCapture cap(0);
-  if (!cap.isOpened()) {
-    std::cerr << "Error: Could not open camera." << std::endl;
-    return -1;
-  }
-
-  // cap.set(cv::CAP_PROP_FRAME_WIDTH, FRAME_WIDTH);
-  // cap.set(cv::CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT);
-  // cap.set(cv::CAP_PROP_FPS, 180);
-
-  std::cout << "Starting Line Follower with PID..." << std::endl;
-  std::cout << "Resolution: " << FRAME_WIDTH << "x" << FRAME_HEIGHT
-            << std::endl;
-  std::cout << "ROI Height: " << ROI_HEIGHT << " pixels" << std::endl;
-
-  pthread_t pid_tid;
-  pthread_create(&pid_tid, NULL, pid_thread, NULL);
-
-  cv::Mat frame, gray, binary;
-  int targetX = FRAME_WIDTH / 2;
-
   while (g_running) {
-    cap >> frame;
-    if (frame.empty())
-      break;
-    // std::chrono::
-    auto [left_speed, right_speed] =
-        find_line_lib::calculate_wheel_speeds(frame);
-    std::cout << "\rTrack Center X: " << targetX
-              << " | Target Speed: L=" << left_speed << " R=" << right_speed
-              << "    " << std::flush;
-    g_left_target_speed = left_speed;
-    g_right_target_speed = right_speed;
-
-    // else {
-    //   g_left_target_speed = g_right_target_speed = 0;
-    //   std::cout << "Line lost!" << std::endl;
-    // }
-    usleep(10000);
+    schedule::poll();
   }
 
   gpio_set_level_persistent(gpio_fd1, 0);
   gpio_set_level_persistent(gpio_fd2, 0);
   gpio_close_persistent(gpio_fd1);
   gpio_close_persistent(gpio_fd2);
-  pthread_join(pid_tid, NULL);
+
   std::cout << std::endl << "Exiting..." << std::endl;
   return 0;
 }
