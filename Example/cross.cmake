@@ -8,6 +8,8 @@ set(CMAKE_SYSTEM_PROCESSOR loongson)
 SET(TOOLCHAIN_DIR "/opt/ls_2k0300_env/loongson-gnu-toolchain-8.3-x86_64-loongarch64-linux-gnu-rc1.6")
 set(CMAKE_CXX_COMPILER ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-g++)
 set(CMAKE_C_COMPILER ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-gcc)
+set(CMAKE_AR      ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-gcc-ar)
+set(CMAKE_RANLIB  ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-gcc-ranlib)
 
 SET(CMAKE_FIND_ROOT_PATH ${TOOLCHAIN_DIR})
 SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
