@@ -77,6 +77,19 @@
 	};
     // ----------电机方向引脚---------- //
 
+    // 分类结果通信GPIO88 GPIO89
+    //算gpa的方法&gpa{x} y,实际gpio编号为：x*16+y
+    zf_driver_gpio_transmit_1{
+        status = "okay";
+        compatible = "seekfree,gpio_in";
+        gpios = <&gpa5 8 GPIO_ACTIVE_HIGH>;
+	};
+    zf_driver_gpio_transmit_2{
+        status = "okay";
+        compatible = "seekfree,gpio_in";
+        gpios = <&gpa5 9 GPIO_ACTIVE_HIGH>;
+	};
+
 
     // ----------姿态传感器---------- //
     spi3 {
@@ -104,54 +117,56 @@
     // ----------姿态传感器---------- //
 
     // ----------舵机PWM---------- //
-    zf_device_pwm_servo{
-        compatible = "seekfree,pwm";
-        pwms = <&pwm_atim 5 1000000>;   // pwm_atim 通道5 周期(用户不需要关心) (0-6 一共7个通道)
-        status = "okay";
-        freq = <300>;                   // 300HZ 频率
-        duty = <0>;                     // 默认 0% 的占空比
-        duty_max = <10000>;             // duty最大值，不建议修改。
-    };
+    // zf_device_pwm_servo{
+    //     compatible = "seekfree,pwm";
+    //     pwms = <&pwm_atim 5 1000000>;   // pwm_atim 通道5 周期(用户不需要关心) (0-6 一共7个通道)
+    //     status = "okay";
+    //     freq = <300>;                   // 300HZ 频率
+    //     duty = <0>;                     // 默认 0% 的占空比
+    //     duty_max = <10000>;             // duty最大值，不建议修改。
+    // };
     // ----------舵机PWM---------- //
 
     // ----------电调PWM---------- //
-    zf_device_pwm_esc_1{
-        compatible = "seekfree,pwm";
-        pwms = <&pwm_gtim 1 1000000>;   // pwm_gtim 通道2 周期(用户不需要关心)
-        status = "okay";
-        freq = <50>;                    // 50HZ 频率
-        duty = <0>;                     // 默认 0% 的占空比
-        duty_max = <10000>;             // duty最大值，不建议修改。
-    };
+    // zf_device_pwm_esc_1{
+    //     compatible = "seekfree,pwm";
+    //     pwms = <&pwm_gtim 1 1000000>;   // pwm_gtim 通道2 周期(用户不需要关心)
+    //     status = "okay";
+    //     freq = <50>;                    // 50HZ 频率
+    //     duty = <0>;                     // 默认 0% 的占空比
+    //     duty_max = <10000>;             // duty最大值，不建议修改。
+    // };
 
-    zf_device_pwm_esc_2{
-        compatible = "seekfree,pwm";
-        pwms = <&pwm_gtim 2 1000000>;   // pwm_gtim 通道3 周期(用户不需要关心)
-        status = "okay";
-        freq = <50>;                    // 50HZ 频率
-        duty = <0>;                     // 默认 0% 的占空比
-        duty_max = <10000>;             // duty最大值，不建议修改。
-    };
+    // zf_device_pwm_esc_2{
+    //     compatible = "seekfree,pwm";
+    //     pwms = <&pwm_gtim 2 1000000>;   // pwm_gtim 通道3 周期(用户不需要关心)
+    //     status = "okay";
+    //     freq = <50>;                    // 50HZ 频率
+    //     duty = <0>;                     // 默认 0% 的占空比
+    //     duty_max = <10000>;             // duty最大值，不建议修改。
+    // };
     // ----------电调PWM---------- //
 
     // ----------电机PWM---------- //
-    zf_device_pwm_motor_1{
-        compatible = "seekfree,pwm";
-        pwms = <&pwm1 0 1000000>;       // pwm1 通道0 周期(用户不需要关心)
-        status = "okay";
-        freq = <17000>;                 // 17KHZ 频率
-        duty = <0>;                     // 默认 0% 的占空比
-        duty_max = <10000>;             // duty最大值，不建议修改。
-    };
+    // zf_device_pwm_motor_1{
+    //     compatible = "seekfree,pwm";
+    //     pwms = <&pwm1 0 1000000>;       // pwm1 通道0 周期(用户不需要关心)
+    //     status = "okay";
+    //     freq = <17000>;                 // 17KHZ 频率
+    //     duty = <0>;                     // 默认 0% 的占空比
+    //     duty_max = <10000>;             // duty最大值，不建议修改。
+    // };
 
-    zf_device_pwm_motor_2{
-        compatible = "seekfree,pwm";
-        pwms = <&pwm2 0 1000000>;       // pwm2 通道0 周期(用户不需要关心)
-        status = "okay";
-        freq = <17000>;                 // 17KHZ 频率
-        duty = <0>;                     // 默认 0% 的占空比
-        duty_max = <10000>;             // duty最大值，不建议修改。
-    };
+    // zf_device_pwm_motor_2{
+    //     compatible = "seekfree,pwm";
+    //     pwms = <&pwm2 0 1000000>;       // pwm2 通道0 周期(用户不需要关心)
+    //     status = "okay";
+    //     freq = <17000>;                 // 17KHZ 频率
+    //     duty = <0>;                     // 默认 0% 的占空比
+    //     duty_max = <10000>;             // duty最大值，不建议修改。
+    // };
+
+
     // ----------电机PWM---------- //  
 
     // ----------屏幕背光引脚---------- //
@@ -338,6 +353,13 @@
     compatible = "loongson,ls300-pwm-gtim";
     pinctrl-names = "default";
     pinctrl-0 = <&gtim_ch2_pin_m1>, <&gtim_ch3_pin_m1>;  
+};
+
+
+&i2c0{
+	status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c0_mux_m0>;
 };
 // ----------电调PWM配置----------//
 
