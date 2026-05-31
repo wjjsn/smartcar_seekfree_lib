@@ -43,7 +43,7 @@ void pwm_get_dev_info(const char *path, struct pwm_info *pwm_info)
 }
 
 
-void pwm_set_duty(const char *path, uint16 duty)
+void pwm_set_duty(const char *path, uint32 duty)
 {
     file_write_dat(path, duty);
 }
