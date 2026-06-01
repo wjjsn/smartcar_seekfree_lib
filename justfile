@@ -22,6 +22,7 @@ build-buildroot:
 
 build-example:
     cd Example && \
+    rm -rf build && \
     cmake -G Ninja -B build -DCMAKE_TOOLCHAIN_FILE=cross.cmake -DCMAKE_INSTALL_PREFIX=/workspace/buildroot-2405/output/target/home/root && \
     cd build && \
     ninja all

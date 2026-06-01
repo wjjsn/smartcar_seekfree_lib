@@ -11,10 +11,15 @@ set(CMAKE_C_COMPILER ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-gcc)
 set(CMAKE_AR      ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-gcc-ar)
 set(CMAKE_RANLIB  ${TOOLCHAIN_DIR}/bin/loongarch64-linux-gnu-gcc-ranlib)
 
-SET(CMAKE_FIND_ROOT_PATH ${TOOLCHAIN_DIR})
+# sysroot for the cross-toolchain
+SET(CMAKE_SYSROOT "${TOOLCHAIN_DIR}/loongarch64-linux-gnu/sysroot" CACHE INTERNAL "")
+
+# Search both toolchain sysroot and Buildroot target sysroot for headers/libraries/packages
+SET(CMAKE_FIND_ROOT_PATH ${TOOLCHAIN_DIR} ${CMAKE_SYSROOT} "/workspace/buildroot-2405/output/target")
 SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -rdynamic -pthread -Wall -Wno-delete-non-virtual-dtor -Wno-placement-new")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=loongarch64 -mtune=loongarch64 -fPIC -ffunction-sections -fdata-sections")
