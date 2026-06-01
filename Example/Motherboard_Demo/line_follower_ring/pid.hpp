@@ -10,6 +10,9 @@ class PID {
   float setpoint_;
   float output_min_, output_max_;
   float speed_, output_;
+  // 双向死区补偿（当控制输出非零时应用）
+  float dead_forward_ = 0.0f;  // 输出为正时加的补偿
+  float dead_backward_ = 0.0f; // 输出为负时加的补偿（以正数表示幅度）
 
   bool enable_integral_limit_;
   float integral_limit_max_;
@@ -55,14 +58,29 @@ public:
     }
   }
   float output() {
-    output_ = function_kp_(error_realtime_) + ki_ * error_sum_ +
-              kd_ * (error_realtime_ - error_lasttime_);
+    float raw = function_kp_(error_realtime_) + ki_ * error_sum_ +
+                kd_ * (error_realtime_ - error_lasttime_);
+
+    // 应用双向死区补偿：当 raw 为正（正转）时加前向补偿；为负时减去反向补偿
+    if (raw > 0.0f) {
+      raw += dead_forward_;
+    } else if (raw < 0.0f) {
+      raw -= dead_backward_;
+    }
+
+    output_ = raw;
     if (output_ > output_max_)
       output_ = output_max_;
     else if (output_ < output_min_)
       output_ = output_min_;
     //		printf("output_:%d",(int)output_);
     return output_;
+  }
+
+  // 设置前向/反向死区补偿，单位与 PID 输出相同（例如 PWM 单位）
+  void set_deadzone(float forward, float backward) {
+    dead_forward_ = forward;
+    dead_backward_ = backward;
   }
   void set_integral_limit(float limit_max, float limit_min) {
     enable_integral_limit_ = true;
