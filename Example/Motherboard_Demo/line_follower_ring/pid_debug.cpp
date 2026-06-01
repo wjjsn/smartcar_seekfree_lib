@@ -36,6 +36,8 @@ float g_right_kp = .0f, g_right_ki = .0f, g_right_kd = .0f;
 
 // 目标速度（由视觉或其他模块设置）
 volatile float g_left_target_speed = 0.0f, g_right_target_speed = 0.0f;
+// 直接 PWM 覆盖，单位与旧上位机协议一致：[-5000,5000]
+volatile float g_left_duty = 0.0f, g_right_duty = 0.0f;
 
 // 运行标志
 volatile sig_atomic_t g_running = 1;
@@ -117,6 +119,10 @@ void apply_tuning_command(const char *buf) {
       g_left_target_speed = value;
     } else if (strcmp(key, "right_speed") == 0) {
       g_right_target_speed = value;
+    } else if (strcmp(key, "left_duty") == 0) {
+      g_left_duty = value;
+    } else if (strcmp(key, "right_duty") == 0) {
+      g_right_duty = value;
     }
   }
 }
@@ -166,9 +172,12 @@ static constexpr TaskConfig pidConfigs[] = {
          left.enable();
          right.enable();
 
-         left_pid.set_integral_limit(3000, -3000);
-         right_pid.set_integral_limit(3000, -3000);
+         left_pid.set_integral_limit(2000, -2000);
+         right_pid.set_integral_limit(2000, -2000);
 
+         // 前向/反向死区补偿
+         left_pid.set_deadzone(439, -553.5);
+         right_pid.set_deadzone(415, -600);
          std::cout << "[PID] 初始化完成！" << std::endl;
          initialized = true;
        }
@@ -197,6 +206,18 @@ static constexpr TaskConfig pidConfigs[] = {
              g_running = 0;
            }
          }
+       }
+
+       // 直接 PWM 覆盖优先级
+       if (g_left_duty != 0.0f || g_right_duty != 0.0f) {
+         float left_direct = (g_left_duty + 5000.0f) / 100.0f;
+         float right_direct = (g_right_duty + 5000.0f) / 100.0f;
+         left.set_duty_cycle(left_direct);
+         right.set_duty_cycle(right_direct);
+         printf("[PID] direct_pwm: left=%.1f right=%.1f\r", g_left_duty,
+                g_right_duty);
+         fflush(stdout);
+         return;
        }
 
        // 读取编码器
