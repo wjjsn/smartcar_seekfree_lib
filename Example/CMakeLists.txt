@@ -6,10 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)
 
-set(CMAKE_PREFIX_PATH "/opt/ls_2k0300_env/opencv_4_10_build" CACHE PATH "OpenCV installation prefix")
 find_package(OpenCV REQUIRED)
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/cross.cmake)
 
 add_subdirectory(libraries)
 
@@ -40,6 +37,7 @@ add_subdirectory(Motherboard_Demo/line_follower)
 add_subdirectory(Motherboard_Demo/line_follower_ring)
 add_subdirectory(Motherboard_Demo/camera_send2pc)
 add_subdirectory(Motherboard_Demo/STSW-IMG013)
+add_subdirectory(Motherboard_Demo/web_camera_demo)
 
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E create_symlink
