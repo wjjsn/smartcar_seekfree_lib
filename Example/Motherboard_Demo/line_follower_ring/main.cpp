@@ -34,8 +34,8 @@ const int FRAME_HEIGHT = 120;
 // ==========================================
 // PID参数和全局变量
 // ==========================================
-float g_left_kp = 1.9f, g_left_ki = 2.23f, g_left_kd = 0.0f;
-float g_right_kp = 2.0f, g_right_ki = 2.01f, g_right_kd = 0.0f;
+float g_left_kp = 1.83f, g_left_ki = 0.73f, g_left_kd = 0.0f;
+float g_right_kp = 2.30f, g_right_ki = 1.39f, g_right_kd = 0.0f;
 
 volatile float g_left_target_speed = 0.0f, g_right_target_speed = 0.0f;
 
@@ -173,9 +173,15 @@ static constexpr TaskConfig myConfigs[] = {
          std::cout << "开启 PWM 输出成功！" << std::endl;
 
          std::cout << "设置 PID 积分限幅..." << std::endl;
-         left_pid.set_integral_limit(23333, -23333);
-         right_pid.set_integral_limit(23333, -23333);
-        //  std::cout << "PID 积分限幅设置成功！" << std::endl;
+         left_pid.set_integral_limit(2000, -2000);
+         right_pid.set_integral_limit(2000, -2000);
+         std::cout << "PID 积分限幅设置成功！" << std::endl;
+
+         // 前向/反向死区补偿
+         std::cout << "设置 PID 死区补偿..." << std::endl;
+         left_pid.set_deadzone(439, -553.5);
+         right_pid.set_deadzone(415, -600);
+         std::cout << "[PID] 初始化完成！" << std::endl;
 
          initialized = true;
        }
@@ -210,8 +216,8 @@ static constexpr TaskConfig myConfigs[] = {
         //            << " Right: " << right_output << std::endl;
 
         //  std::cout << "设置 PWM 占空比..." << std::endl;
-        //  left.set_duty_cycle(convert_to_pwm_output(left_output));
-        //  right.set_duty_cycle(convert_to_pwm_output(right_output));
+         left.set_duty_cycle(convert_to_pwm_output(left_output));
+         right.set_duty_cycle(convert_to_pwm_output(right_output));
         //  std::cout << "PWM 占空比设置成功！ Left: "
         //            << convert_to_pwm_output(left_output)
         //            << "% Right: " << convert_to_pwm_output(right_output) << "%"
@@ -225,7 +231,7 @@ static constexpr TaskConfig myConfigs[] = {
        }
        
      }},
-    {10, []() {
+    {100, []() {
        static cv::VideoCapture cap(0);
        static cv::Mat frame;
        static bool initialized = false;
@@ -244,7 +250,7 @@ static constexpr TaskConfig myConfigs[] = {
        if (frame.empty())
          return;
        auto [left_speed, right_speed] =
-           find_line_lib::calculate_wheel_speeds(frame);
+           find_line_lib::calculate_wheel_speeds(frame, 20.0,0.2  );
        std::cout << " | Target Speed: L=" << left_speed << " R=" << right_speed
                  << "    \r" << std::flush;
        g_left_target_speed = left_speed;
