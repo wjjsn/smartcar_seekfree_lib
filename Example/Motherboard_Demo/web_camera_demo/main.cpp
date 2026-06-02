@@ -1,7 +1,6 @@
 #include <atomic>
 #include <civetweb.h>
 #include <iostream>
-#include <mutex>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <thread>
@@ -10,8 +9,6 @@
 // Global flag for controlling the camera
 std::atomic<bool> isRunning(false);
 cv::VideoCapture videoCap;
-cv::Mat currentFrame;
-std::mutex frameMutex;
 
 // HTML page as a string
 const char *htmlPage = R"(
@@ -59,13 +56,6 @@ const char *htmlPage = R"(
         <img id="cameraFeed" src="/video_feed" alt="Camera Feed">
         <div id="status" class="status-ok">Streaming</div>
     </div>
-
-    <script>
-        setInterval(function() {
-            var img = document.getElementById('cameraFeed');
-            img.src = '/video_feed?' + new Date().getTime();
-        }, 16);
-    </script>
 </body>
 </html>
 )";
@@ -90,39 +80,53 @@ int handleRequest(struct mg_connection *conn) {
 
   // Route: Video stream
   if (uri == "/video_feed") {
-    // Capture frame in main thread
-    if (videoCap.isOpened()) {
+    if (!videoCap.isOpened()) {
+      const char *err = "Camera not opened";
+      mg_printf(conn,
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: "
+                "text/plain\r\nContent-Length: %zu\r\n\r\n",
+                strlen(err));
+      mg_write(conn, err, strlen(err));
+      return 500;
+    }
+
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
+              "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+              "Pragma: no-cache\r\n"
+              "Connection: keep-alive\r\n\r\n");
+
+    while (isRunning && videoCap.isOpened()) {
       cv::Mat frame;
-      videoCap >> frame;
-      if (!frame.empty()) {
-        std::unique_lock<std::mutex> lock(frameMutex);
-        currentFrame = frame.clone();
+      if (!videoCap.read(frame) || frame.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        continue;
+      }
+
+      std::vector<uchar> buf;
+      if (!cv::imencode(".jpg", frame, buf, {cv::IMWRITE_JPEG_QUALITY, 80})) {
+        continue;
+      }
+
+      std::string partHeader = "--frame\r\n"
+                               "Content-Type: image/jpeg\r\n"
+                               "Content-Length: " +
+                               std::to_string(buf.size()) + "\r\n\r\n";
+
+      if (mg_write(conn, partHeader.c_str(), partHeader.size()) < 0) {
+        break;
+      }
+      if (mg_write(conn, reinterpret_cast<const char *>(buf.data()),
+                   buf.size()) < 0) {
+        break;
+      }
+      if (mg_write(conn, "\r\n", 2) < 0) {
+        break;
       }
     }
 
-    std::unique_lock<std::mutex> lock(frameMutex);
-    if (!currentFrame.empty()) {
-      std::vector<uchar> buf;
-      cv::imencode(".jpg", currentFrame, buf, {cv::IMWRITE_JPEG_QUALITY, 80});
-      std::string header = "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: image/jpeg\r\n"
-                           "Cache-Control: no-cache\r\n"
-                           "Access-Control-Allow-Origin: *\r\n"
-                           "Content-Length: " +
-                           std::to_string(buf.size()) +
-                           "\r\n"
-                           "\r\n";
-      mg_write(conn, header.c_str(), header.length());
-      mg_write(conn, buf.data(), buf.size());
-      return 200;
-    }
-    const char *err = "No frame available";
-    mg_printf(conn,
-              "HTTP/1.1 404 Not Found\r\nContent-Type: "
-              "text/plain\r\nContent-Length: %zu\r\n\r\n",
-              strlen(err));
-    mg_write(conn, err, strlen(err));
-    return 404;
+    return 200;
   }
 
   // 404 for unknown routes
@@ -159,9 +163,13 @@ int main() {
     memset(&callbacks, 0, sizeof(callbacks));
     callbacks.begin_request = handleRequest;
 
-    const char *options[] = {
-        "document_root", ".", "listening_ports", "8088", "request_timeout_ms",
-        "10000",         NULL};
+    const char *options[] = {"document_root",
+                             ".",
+                             "listening_ports",
+                             "8088",
+                             "request_timeout_ms",
+                             "0",
+                             NULL};
 
     struct mg_init_data init;
     memset(&init, 0, sizeof(init));
