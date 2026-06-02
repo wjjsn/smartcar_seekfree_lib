@@ -64,7 +64,7 @@ const char *htmlPage = R"(
         setInterval(function() {
             var img = document.getElementById('cameraFeed');
             img.src = '/video_feed?' + new Date().getTime();
-        }, 100);
+        }, 16);
     </script>
 </body>
 </html>
