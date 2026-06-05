@@ -38,6 +38,7 @@ add_subdirectory(Motherboard_Demo/line_follower_ring)
 add_subdirectory(Motherboard_Demo/camera_send2pc)
 add_subdirectory(Motherboard_Demo/STSW-IMG013)
 add_subdirectory(Motherboard_Demo/web_camera_demo)
+add_subdirectory(Motherboard_Demo/line_follower_ring_web_demo)
 
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E create_symlink
