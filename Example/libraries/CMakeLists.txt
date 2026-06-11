@@ -11,24 +11,24 @@ target_include_directories(zf_library INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_driver>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_device>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/seekfree_assistant>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/ncnn/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/flatbuffers/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/gemmlowp>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/gemmlowp/fixedpoint>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/ruy>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/ruy/ruy>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/micro>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/micro/kernels>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/kernels/internal>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/core/api>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/core/c>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/schema>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/ncnn/include>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/flatbuffers/include>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/gemmlowp>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/gemmlowp/fixedpoint>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/ruy>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/third_party/ruy/ruy>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/micro>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/micro/kernels>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/kernels/internal>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/core/api>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/core/c>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/tensorflow/lite/schema>
 )
 
 target_link_directories(zf_library INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/lib>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/ncnn/lib>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/tflm/lib>
+    # $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_components/ncnn/lib>
 )
 
 target_sources(zf_library INTERFACE
@@ -57,6 +57,6 @@ target_sources(zf_library INTERFACE
 target_link_libraries(zf_library INTERFACE
     pthread
     m
-    tflm
-    ncnn
+    # tflm
+    # ncnn
 )
