@@ -6,6 +6,10 @@ set(ZF_LIBRARY_DESCRIPTION "SeekFree LS2K0300 Driver Library")
 add_library(zf_library INTERFACE)
 add_library(zf::library ALIAS zf_library)
 
+# 嵌入式 HTTP 库 civetweb (v1.16, MIT License)
+# 独立构建为目标 zf::civetweb,需要时由调用方显式 link
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/civetweb)
+
 target_include_directories(zf_library INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_common>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/zf_driver>
