@@ -34,8 +34,8 @@ const int FRAME_HEIGHT = 120;
 // ==========================================
 // PID参数和全局变量
 // ==========================================
-float g_left_kp = 1.83f, g_left_ki = 0.73f, g_left_kd = 0.0f;
-float g_right_kp = 2.30f, g_right_ki = 1.39f, g_right_kd = 0.0f;
+float g_left_kp = 5.71f, g_left_ki = 4.01f, g_left_kd = 0.0f;
+float g_right_kp = 7.48f, g_right_ki = 4.23f, g_right_kd = 0.0f;
 
 volatile float g_left_target_speed = 0.0f, g_right_target_speed = 0.0f;
 
@@ -127,12 +127,12 @@ float right_kp_func(float error) { return error * g_right_kp; }
 float convert_to_pwm_output(float value) { return (value + 5000.0) / 100.0; }
 
 static constexpr TaskConfig myConfigs[] = {
-    {100,
+    {5,
      []() {
-       static PID left_pid(100, left_kp_func, g_left_ki, g_left_kd, -1000,
-                           1000);
-       static PID right_pid(100, right_kp_func, g_right_ki, g_right_kd, -1000,
-                            1000);
+       static PID left_pid(100, left_kp_func, g_left_ki, g_left_kd, -5000,
+                           5000);
+       static PID right_pid(100, right_kp_func, g_right_ki, g_right_kd, -5000,
+                            5000);
 
        static PWM left(0, 0);
        static PWM right(1, 0);
@@ -173,8 +173,8 @@ static constexpr TaskConfig myConfigs[] = {
          std::cout << "开启 PWM 输出成功！" << std::endl;
 
          std::cout << "设置 PID 积分限幅..." << std::endl;
-         left_pid.set_integral_limit(2000, -2000);
-         right_pid.set_integral_limit(2000, -2000);
+         left_pid.set_integral_limit(4000, -4000);
+         right_pid.set_integral_limit(4000, -4000);
          std::cout << "PID 积分限幅设置成功！" << std::endl;
 
          // 前向/反向死区补偿
@@ -231,7 +231,7 @@ static constexpr TaskConfig myConfigs[] = {
        }
        
      }},
-    {100, []() {
+    {5, []() {
        static cv::VideoCapture cap(0);
        static cv::Mat frame;
        static bool initialized = false;
@@ -250,11 +250,13 @@ static constexpr TaskConfig myConfigs[] = {
        if (frame.empty())
          return;
        auto [left_speed, right_speed] =
-           find_line_lib::calculate_wheel_speeds(frame, 20.0,0.2  );
+           find_line_lib::calculate_wheel_speeds(frame, 80.0,0.8  );
        std::cout << " | Target Speed: L=" << left_speed << " R=" << right_speed
                  << "    \r" << std::flush;
-       g_left_target_speed = left_speed;
-       g_right_target_speed = right_speed;
+        if (left_speed < 10.0f) left_speed = 10.0f;   // 保证内侧轮最慢也保持前滚，不反转
+        if (right_speed < 10.0f) right_speed = 10.0f;
+        g_left_target_speed = left_speed;
+        g_right_target_speed = right_speed;
      }}};
 static auto get_time() {
   return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
