@@ -3,8 +3,9 @@ cmake_minimum_required(VERSION 3.15)
 get_filename_component(PROJECT_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 project(${PROJECT_NAME})
 
-# 禁用 SSL（civetweb 可选项；与 web_camera_demo 保持一致）
-add_definitions(-DNO_SSL)
+# 嵌入式 HTTP 库 (civetweb v1.16) 已集成进 libraries/civetweb,
+# 在 libraries/CMakeLists.txt 中 add_subdirectory 注册并暴露 alias zf::civetweb。
+# 这里直接 link,不再走外部 find_library。
 
 # 直接在本工程中构建 find_line_lib 静态库：
 #   该库同时被 line_follower_ring 主工程使用；如果在多个工程里
@@ -48,51 +49,17 @@ target_link_libraries(find_line_lib_web
     PUBLIC stdc++fs
 )
 
-# civetweb + zlib（与 web_camera_demo 一致：优先静态，回退动态）
-find_path(CIVETWEB_INCLUDE civetweb.h)
-find_library(CIVETWEB_LIBRARY civetweb)
-find_library(ZLIB_LIBRARY z)
-
-if(NOT CIVETWEB_INCLUDE)
-    message(FATAL_ERROR "Could not find civetweb include directory")
-endif()
-if(NOT CIVETWEB_LIBRARY)
-    message(FATAL_ERROR "Could not find civetweb library")
-endif()
-if(NOT ZLIB_LIBRARY)
-    message(FATAL_ERROR "Could not find zlib library")
-endif()
-
-set(_OLD_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
-set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
-find_library(CIVETWEB_STATIC_LIBRARY NAMES civetweb)
-find_library(ZLIB_STATIC_LIBRARY NAMES z)
-set(CMAKE_FIND_LIBRARY_SUFFIXES ${_OLD_FIND_LIBRARY_SUFFIXES})
-
-if(NOT CIVETWEB_STATIC_LIBRARY)
-    set(CIVETWEB_STATIC_LIBRARY ${CIVETWEB_LIBRARY})
-    message(WARNING "civetweb static library not found, falling back to shared library: ${CIVETWEB_STATIC_LIBRARY}")
-endif()
-if(NOT ZLIB_STATIC_LIBRARY)
-    set(ZLIB_STATIC_LIBRARY ${ZLIB_LIBRARY})
-    message(WARNING "zlib static library not found, falling back to shared library: ${ZLIB_STATIC_LIBRARY}")
-endif()
-
 add_executable(${PROJECT_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CIVETWEB_INCLUDE}
-)
-
 target_link_libraries(${PROJECT_NAME}
     find_line_lib_web
-    ${CIVETWEB_STATIC_LIBRARY}
-    ${ZLIB_STATIC_LIBRARY}
-    # libstdc++/libgcc 静态链接，pthread / dl 保持动态
+    # 嵌入式 HTTP 库 (civetweb v1.16),由 libraries/civetweb 内部构建。
+    # 它已 PUBLIC 链入 pthread / m,并 PUBLIC 暴露了头文件目录。
+    civetweb
+    # libstdc++/libgcc 静态链接,dl 保持动态(pthread / m 由 zf::civetweb 传递性带入)
     -Wl,-Bstatic -lstdc++ -lgcc -Wl,-Bdynamic
-    pthread
     dl
 )
 
