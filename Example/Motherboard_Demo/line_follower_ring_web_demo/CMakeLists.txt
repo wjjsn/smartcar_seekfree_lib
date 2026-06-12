@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.15)
 get_filename_component(PROJECT_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 project(${PROJECT_NAME})
 
+add_compile_options(-Ofast)
+
 # 嵌入式 HTTP 库 (civetweb v1.16) 已集成进 libraries/civetweb,
 # 在 libraries/CMakeLists.txt 中 add_subdirectory 注册并暴露 alias zf::civetweb。
 # 这里直接 link,不再走外部 find_library。
