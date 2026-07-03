@@ -240,6 +240,7 @@ int main() {
         find_line_lib::imshow("2. Debug", result_view);         // 丢给窗口 2
     }
 
+    
     g_running.store(false);
     mg_stop(ctx);
     cap.release();
