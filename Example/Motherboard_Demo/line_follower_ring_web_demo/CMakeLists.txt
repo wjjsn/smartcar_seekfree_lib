@@ -37,10 +37,11 @@ add_library(find_line_lib_web STATIC
 # 紫色 legacy_target / 黄色 folded_target 标注并填充 debug_image。
 # 注意：库目标名取 find_line_lib_web，避免与
 # line_follower_ring 主工程里的 find_line_lib 静态库冲突。
-target_compile_definitions(find_line_lib_web PRIVATE
+target_compile_definitions(find_line_lib_web PUBLIC
     -DSMTC2GO_DEBUG
     -DSMTC2GO_DEBUG_LOG
 )
+
 
 target_include_directories(find_line_lib_web
     PUBLIC ${FIND_LINE_LIB_SRC_DIR}/include

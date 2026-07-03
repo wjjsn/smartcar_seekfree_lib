@@ -1,14 +1,8 @@
 // line_follower_ring_web_demo
 //
 // 目标：
-//   1. 打开摄像头抓取画面；
-//   2. 送入 find_line_lib::calculate_wheel_speeds，库内部会画出
-//      紫色 legacy_target 与黄色 folded_target 等调试标注；
-//   3. 通过 civetweb 把带这些标注的图像以 MJPEG 推流到网页上。
-//
-// 与 line_follower_ring 主工程的区别：
-//   - 不下放运动控制（不接 PWM / GPIO / 编码器），纯可视化调试。
-//   - 输出端口 8089（避免与 web_camera_demo 的 8088 冲突）。
+//   提供一个类似 OpenCV 的 `imshow(窗口名, 图像)` 接口，
+//   让网页端能够根据不同的“窗口名”自动创建并刷新不同的独立窗口。
 
 #include <atomic>
 #include <chrono>
@@ -16,268 +10,239 @@
 #include <cstring>
 #include <iostream>
 #include <mutex>
+#include <map>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "find_line_lib/calculate_wheel_speeds.h"
+#include "find_line_lib/ring.h"
 
-namespace {
+inline std::atomic<bool> g_running{false};
 
-// 全局运行标志与可被 HTTP 回调消费的最近一帧
-std::atomic<bool> g_running{false};
-std::atomic<bool> g_camera_ready{false};
+namespace find_line_lib {
 
-// 用 mutex 保护的最新一帧带紫/黄点的调试图
-std::mutex g_frame_mutex;
-cv::Mat g_latest_frame;
+// 全局窗口管家变量
+inline std::mutex g_window_mutex;
+inline std::map<std::string, cv::Mat> g_virtual_windows;
 
-// HTML 页面：嵌一张 /video_feed 的 MJPEG 流图，并附说明
+/**
+ * @brief 自定义虚拟 Web Imshow 接口
+ * 用法与 cv::imshow 完全一致，不同的 winname 会在网页端自动弹窗渲染
+ */
+inline void imshow(const std::string& winname, cv::InputArray mat) {
+    if (mat.empty()) return;
+    cv::Mat frame = mat.getMat().clone();
+    
+    // 自动将图像统一缩放到前端舒适的 400x300 分辨率
+    if (frame.cols != 400 || frame.rows != 300) {
+        cv::resize(frame, frame, cv::Size(400, 300));
+    }
+    // 自动将灰度/二值图（如 result_img）转为 BGR，确保 hconcat 拼接时通道一致
+    if (frame.channels() == 1) {
+        cv::cvtColor(frame, frame, cv::COLOR_GRAY2BGR);
+    }
+
+    std::lock_guard<std::mutex> lk(g_window_mutex);
+    g_virtual_windows[winname] = frame; // 写入或覆盖该命名窗口
+}
+}
+
+
+// 它会实时向 C++ 索要当前拼起来的大图，并利用 JavaScript 根据窗口名自动切分、创建 HTML 容器
 const char *kHtmlPage = R"HTML(<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>find_line_lib 可视化</title>
+    <title>Web Imshow 动态工作台</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f0f0f0;
-            text-align: center;
-        }
-        h1 { color: #333; }
-        .legend { margin: 12px auto; max-width: 640px; text-align: left; }
-        .dot {
-            display: inline-block; width: 10px; height: 10px;
-            border-radius: 50%; margin-right: 6px; vertical-align: middle;
-        }
-        .purple { background: #ff00ff; }
-        .yellow { background: #ffff00; }
-        #videoContainer {
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 20px;
-            display: inline-block;
-        }
-        #cameraFeed {
-            max-width: 100%;
-            width: 480px;
-            height: 360px;
-            border: 2px solid #333;
-            border-radius: 4px;
-            background: #000;
-        }
-        #status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        .status-ok { background-color: #d4edda; color: #155724; }
-        .status-error { background-color: #f8d7da; color: #721c24; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #eaeaea; text-align: center; }
+        h1 { color: #333; margin-bottom: 20px; }
+        .window-container { display: flex; justify-content: center; gap: 20px; max-width: 100%; flex-wrap: wrap; margin: 0 auto; }
+        .display-window { background: #fff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.12); padding: 12px; }
+        .window-title { font-size: 13px; font-weight: bold; color: #444; margin-bottom: 8px; text-align: left; background: #f0f0f0; padding: 4px 8px; border-radius: 3px; }
+        .crop-viewport { width: 400px; height: 300px; overflow: hidden; position: relative; border: 2px solid #222; border-radius: 4px; background: #000; }
+        .mjpeg-stream { position: absolute; top: 0; left: 0; height: 300px; max-width: none; }
     </style>
 </head>
 <body>
-    <h1>find_line_lib 调试图像</h1>
-    <div class="legend">
-        <div><span class="dot purple"></span>紫色点：legacy_target（最远端点）</div>
-        <div><span class="dot yellow"></span>黄色点：folded_target（按路径长度收缩后的目标）</div>
-    </div>
-    <div id="videoContainer">
-        <img id="cameraFeed" src="/video_feed" alt="Camera Feed">
-        <div id="status" class="status-ok">Streaming</div>
-    </div>
+    <h1>OpenCV `imshow` 网页控制台</h1>
+    <div class="window-container" id="workspace"></div>
+
+    <script>
+        // 动态监听 C++ 端的窗口配置
+        async function syncWindows() {
+            try {
+                let res = await fetch('/window_layout');
+                let config = await res.json(); // 拿到格式如: { total: 3, windows: ["Live", "Result", "Gray"] }
+                let container = document.getElementById('workspace');
+                
+                // 检查当前的 DOM 窗口数量和名字是否需要更新
+                let currentWins = Array.from(container.querySelectorAll('.window-title')).map(el => el.textContent);
+                let configWins = config.windows;
+                
+                if (JSON.stringify(currentWins) !== JSON.stringify(configWins)) {
+                    container.innerHTML = ''; // 发现窗口数量或名字变了，重新生成布局
+                    configWins.forEach((winName, index) => {
+                        let winHtml = `
+                            <div class="display-window">
+                                <div class="window-title">${winName}</div>
+                                <div class="crop-viewport">
+                                    <img class="mjpeg-stream" src="/video_feed" style="width: ${config.total * 400}px; left: -${index * 400}px;">
+                                </div>
+                            </div>`;
+                        container.insertAdjacentHTML('beforeend', winHtml);
+                    });
+                }
+            } catch (e) { console.error("同步窗口失败", e); }
+        }
+        
+        // 每秒检查一次有没有新调用 imshow() 创建新窗口
+        setInterval(syncWindows, 1000);
+        syncWindows();
+    </script>
 </body>
 </html>
 )HTML";
 
-// 把一帧 BGR 编码为 JPEG 字节
-bool encode_jpeg(const cv::Mat &bgr, std::vector<uchar> &buf) {
-  if (bgr.empty())
-    return false;
-  // 推流到网页时适度缩小，省 CPU 与带宽；保持宽高比例，最大边 480
-  cv::Mat small;
-  const int max_side = 480;
-  int w = bgr.cols, h = bgr.rows;
-  if (w > max_side || h > max_side) {
-    double scale = std::min(max_side / static_cast<double>(w),
-                            max_side / static_cast<double>(h));
-    cv::resize(bgr, small, cv::Size(), scale, scale, cv::INTER_AREA);
-  } else {
-    small = bgr;
-  }
-  return cv::imencode(".jpg", small, buf, {cv::IMWRITE_JPEG_QUALITY, 80});
-}
-
 int handle_request(struct mg_connection *conn) {
   const struct mg_request_info *req_info = mg_get_request_info(conn);
-  if (!req_info)
-    return 0;
-
+  if (!req_info) return 0;
   std::string uri = req_info->local_uri ? req_info->local_uri : "";
 
-  // 根路径 -> HTML 页面
+  // 1. 主页面
   if (uri == "/" || uri == "") {
-    mg_printf(conn,
-              "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/html; charset=utf-8\r\n"
-              "Content-Length: %zu\r\n\r\n",
-              std::strlen(kHtmlPage));
+    mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\n\r\n", std::strlen(kHtmlPage));
     mg_write(conn, kHtmlPage, std::strlen(kHtmlPage));
     return 200;
   }
 
-  // MJPEG 推流
-  if (uri == "/video_feed") {
-    mg_printf(conn,
-              "HTTP/1.1 200 OK\r\n"
-              "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
-              "Cache-Control: no-cache, no-store, must-revalidate\r\n"
-              "Pragma: no-cache\r\n"
-              "Connection: keep-alive\r\n\r\n");
-
-    while (g_running.load()) {
-      cv::Mat frame_copy;
-      {
-        std::lock_guard<std::mutex> lk(g_frame_mutex);
-        if (!g_latest_frame.empty()) {
-          frame_copy = g_latest_frame.clone();
+  // 路由 1: 实时输出窗口布局元数据
+    if (uri == "/window_layout") {
+        std::string json = "{";
+        {
+            std::lock_guard<std::mutex> lk(find_line_lib::g_window_mutex);
+            json += "\"total\":" + std::to_string(find_line_lib::g_virtual_windows.size()) + ",\"windows\":[";
+            for (auto it = find_line_lib::g_virtual_windows.begin(); it != find_line_lib::g_virtual_windows.end(); ++it) {
+                json += "\"" + it->first + "\"";
+                if (std::next(it) != find_line_lib::g_virtual_windows.end()) json += ",";
+            }
+            json += "]}";
         }
-      }
-      if (frame_copy.empty()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        continue;
-      }
-
-      std::vector<uchar> jpeg_buf;
-      if (!encode_jpeg(frame_copy, jpeg_buf)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        continue;
-      }
-
-      std::string part_header = "--frame\r\n"
-                                "Content-Type: image/jpeg\r\n"
-                                "Content-Length: " +
-                                std::to_string(jpeg_buf.size()) + "\r\n\r\n";
-
-      if (mg_write(conn, part_header.c_str(), part_header.size()) <= 0)
-        break;
-      if (mg_write(conn, reinterpret_cast<const char *>(jpeg_buf.data()),
-                   jpeg_buf.size()) <= 0)
-        break;
-      if (mg_write(conn, "\r\n", 2) <= 0)
-        break;
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n", json.size());
+        mg_write(conn, json.c_str(), json.size());
+        return 200;
     }
-    return 200;
-  }
 
-  // 404
-  const char *not_found = "Not Found";
-  mg_printf(conn,
-            "HTTP/1.1 404 Not Found\r\n"
-            "Content-Type: text/plain\r\n"
-            "Content-Length: %zu\r\n\r\n",
-            std::strlen(not_found));
-  mg_write(conn, not_found, std::strlen(not_found));
-  return 404;
+    // 路由 2: 多路拼装图像视频流
+    if (uri == "/video_feed") {
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n");
+        while (g_running.load()) {
+            cv::Mat combined_frame;
+            {
+                std::lock_guard<std::mutex> lk(find_line_lib::g_window_mutex);
+                if (!find_line_lib::g_virtual_windows.empty()) {
+                    std::vector<cv::Mat> views;
+                    for (const auto& [name, img] : find_line_lib::g_virtual_windows) {
+                        views.push_back(img);
+                    }
+                    cv::hconcat(views, combined_frame); 
+                }
+            }
+            
+            if (combined_frame.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                continue;
+            }
+
+            std::vector<uchar> jpeg_buf;
+            cv::imencode(".jpg", combined_frame, jpeg_buf, {cv::IMWRITE_JPEG_QUALITY, 75});
+            
+            std::string part_header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + std::to_string(jpeg_buf.size()) + "\r\n\r\n";
+            if (mg_write(conn, part_header.c_str(), part_header.size()) <= 0) break;
+            if (mg_write(conn, reinterpret_cast<const char *>(jpeg_buf.data()), jpeg_buf.size()) <= 0) break;
+            if (mg_write(conn, "\r\n", 2) <= 0) break;
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(25)); // 控制推流帧率在 ~40FPS
+        }
+        return 200;
+    }
+    return 404;
 }
-
-} // namespace
+// namespace
 
 int main() {
-  std::cout << "OpenCV version: " << CV_VERSION << std::endl;
-
-  // 打开相机：与 line_follower_ring 一致用 160x120
-  cv::VideoCapture cap(0);
-  if (!cap.isOpened()) {
-    std::cerr << "Error: Cannot open camera" << std::endl;
-    return 1;
-  }
-  cap.set(cv::CAP_PROP_FRAME_WIDTH, 160);
-  cap.set(cv::CAP_PROP_FRAME_HEIGHT, 120);
-  cap.set(cv::CAP_PROP_FPS, 60);
-  std::cout << "Camera: " << cap.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
-            << cap.get(cv::CAP_PROP_FRAME_HEIGHT) << "@"
-            << cap.get(cv::CAP_PROP_FPS) << "fps" << std::endl;
-  g_camera_ready.store(true);
-
-  // 启动 civetweb
-  struct mg_callbacks callbacks;
-  std::memset(&callbacks, 0, sizeof(callbacks));
-  callbacks.begin_request = handle_request;
-
-  const char *options[] = {
-      "document_root",      ".", "listening_ports", "8089",
-      "request_timeout_ms", "0", nullptr,
-  };
-
-  struct mg_init_data init;
-  std::memset(&init, 0, sizeof(init));
-  init.callbacks = &callbacks;
-  init.configuration_options = options;
-
-  struct mg_error_data error;
-  char error_buf[512];
-  std::memset(&error, 0, sizeof(error));
-  error.text = error_buf;
-  error.text_buffer_size = sizeof(error_buf);
-
-  std::cout << "Starting server on http://localhost:8089" << std::endl;
-  mg_context *ctx = mg_start2(&init, &error);
-  if (!ctx) {
-    std::cerr << "Error: Cannot start server";
-    if (error.text && error.text_buffer_size > 0) {
-      std::cerr << ": " << error.text;
+    std::cout << "[INFO] 正在尝试通过 V4L2 后端打开摄像头 0..." << std::endl;
+    
+    // 1. 显式指定 CAP_V4L2 增强在 Linux/Buildroot 上的兼容性
+    cv::VideoCapture cap(0, cv::CAP_V4L2);
+    if (!cap.isOpened()) {
+        std::cerr << "[ERROR] 错误：无法打开摄像头！请检查 /dev/video0 是否存在或权限是否正确。" << std::endl;
+        return 1;
     }
-    std::cerr << std::endl;
+
+    // 2. 尝试设置低分辨率以节省嵌入式 CPU
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, 160);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 120);
+    
+    // 打印实际获取到的硬件分辨率
+    double actual_w = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    double actual_h = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+    std::cout << "[INFO] 摄像头初始化成功。当前硬件输出分辨率: " << actual_w << "x" << actual_h << std::endl;
+
+    // 3. 启动 Web 服务器
+    struct mg_callbacks callbacks;
+    std::memset(&callbacks, 0, sizeof(callbacks));
+    callbacks.begin_request = handle_request;
+    const char *options[] = { "document_root", ".", "listening_ports", "8089", "request_timeout_ms", "0", nullptr };
+    struct mg_init_data init;
+    std::memset(&init, 0, sizeof(init));
+    init.callbacks = &callbacks;
+    init.configuration_options = options;
+    mg_context *ctx = mg_start2(&init, nullptr);
+    g_running.store(true);
+
+    cv::Mat frame_raw, frame;
+    static find_line_lib::tools tools;
+    static find_line_lib::ring ring_detector;
+
+    std::cout << "[INFO] 工作台已就绪，请在浏览器中打开 http://板子IP:8089" << std::endl;
+
+    while (g_running.load()) {
+        if (!cap.read(frame_raw) || frame_raw.empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            continue;
+        }
+
+        // 4. 安全防御：如果摄像头固件拒绝了 160x120 的请求，强行输出大图，我们就在这里手动缩放
+        if (frame_raw.cols != 160 || frame_raw.rows != 120) {
+            cv::resize(frame_raw, frame, cv::Size(160, 120), 0, 0, cv::INTER_AREA);
+        } else {
+            frame = frame_raw; // 分辨率正确，直接赋值（共享特征，零拷贝）
+        }
+
+        // ─── 算法基本操作 ───
+        cv::Mat color_debug_frame = frame.clone(); 
+        cv::Mat bin_frame = ring_detector.check_ring(frame, &color_debug_frame);
+        if (bin_frame.empty()) continue;
+
+        cv::Mat result_view = bin_frame.clone(); 
+
+        cv::copyMakeBorder(bin_frame, bin_frame, 1, 0, 1, 1, cv::BORDER_CONSTANT, cv::Scalar(0));
+        auto result = tools.find_center_line(bin_frame, -1, -1);
+        for (const auto &p : result) {
+            cv::circle(color_debug_frame, cv::Point(p.x, p.y), 1, cv::Scalar(0, 255, 0), cv::FILLED);
+        }
+        
+        // 只要你更换窗口名，网页上就会自动多弹出一个独立的窗口！
+        find_line_lib::imshow("1. Result", color_debug_frame);  // 丢给窗口 1
+        find_line_lib::imshow("2. Debug", result_view);         // 丢给窗口 2
+    }
+
+    
+    g_running.store(false);
+    mg_stop(ctx);
     cap.release();
-    return 1;
-  }
-  g_running.store(true);
-  std::cout << "Server started. Open http://localhost:8089" << std::endl;
-  std::cout << "  /            -> HTML 页面" << std::endl;
-  std::cout << "  /video_feed  -> MJPEG 推流（带紫/黄点标注）" << std::endl;
-
-  // 主循环：抓帧 -> 调 find_line_lib -> 存到全局
-  cv::Mat frame;
-  while (g_running.load()) {
-    if (!cap.read(frame) || frame.empty()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      continue;
-    }
-
-    cv::Mat debug_img;
-    auto [left_speed, right_speed] = find_line_lib::calculate_wheel_speeds(
-        frame, /*base_speed=*/20.0f, /*max_gain_ratio=*/0.2f, debug_img);
-
-    // 把库吐出来的带紫/黄点的图喂给网页
-    if (!debug_img.empty()) {
-      std::lock_guard<std::mutex> lk(g_frame_mutex);
-      g_latest_frame = debug_img;
-    }
-
-    // 控制台简单输出一下速度
-    static auto last_print = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    if (now - last_print > std::chrono::milliseconds(500)) {
-      last_print = now;
-      std::cout << "L=" << left_speed << " R=" << right_speed
-                << "  debug=" << (debug_img.empty() ? 0 : debug_img.cols) << "x"
-                << (debug_img.empty() ? 0 : debug_img.rows) << "\r"
-                << std::flush;
-    }
-  }
-
-  g_running.store(false);
-  {
-    std::lock_guard<std::mutex> lk(g_frame_mutex);
-    g_latest_frame.release();
-  }
-  mg_stop(ctx);
-  cap.release();
-  std::cout << std::endl << "Server stopped" << std::endl;
-  return 0;
+    return 0;
 }
