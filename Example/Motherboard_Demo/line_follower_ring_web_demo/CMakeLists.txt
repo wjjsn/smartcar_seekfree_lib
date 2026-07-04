@@ -31,6 +31,7 @@ add_library(find_line_lib_web STATIC
     ${FIND_LINE_LIB_SRC_DIR}/src/find_line_lib/check_roadblock.cpp
     ${FIND_LINE_LIB_SRC_DIR}/src/find_line_lib/calculate_wheel_speeds.cpp
     ${FIND_LINE_LIB_SRC_DIR}/src/find_line_lib/skeleton.cpp
+    ${FIND_LINE_LIB_SRC_DIR}/src/find_line_lib/web_imshow.cpp
 )
 
 # 与 smtcgo2/CMakeLists.txt 保持一致：开启调试宏，让库画出
@@ -40,8 +41,12 @@ add_library(find_line_lib_web STATIC
 target_compile_definitions(find_line_lib_web PUBLIC
     -DSMTC2GO_DEBUG
     -DSMTC2GO_DEBUG_LOG
+    -DSMTC2GO_USE_WEB_IMSHOW
 )
 
+target_compile_options(find_line_lib_web PRIVATE
+    -Ofast
+)
 
 target_include_directories(find_line_lib_web
     PUBLIC ${FIND_LINE_LIB_SRC_DIR}/include
@@ -50,6 +55,7 @@ target_include_directories(find_line_lib_web
 target_link_libraries(find_line_lib_web
     PUBLIC ${OpenCV_LIBS}
     PUBLIC stdc++fs
+    PUBLIC civetweb
 )
 
 add_executable(${PROJECT_NAME}
@@ -58,9 +64,7 @@ add_executable(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
     find_line_lib_web
-    # 嵌入式 HTTP 库 (civetweb v1.16),由 libraries/civetweb 内部构建。
-    # 它已 PUBLIC 链入 pthread / m,并 PUBLIC 暴露了头文件目录。
-    civetweb
+    # civetweb 已通过 find_line_lib_web PUBLIC 链入，无需重复链接
     # libstdc++/libgcc 静态链接,dl 保持动态(pthread / m 由 zf::civetweb 传递性带入)
     -Wl,-Bstatic -lstdc++ -lgcc -Wl,-Bdynamic
     dl
