@@ -2,5 +2,5 @@
 	path = 【软件】交叉编译工具 上位机等/逐飞助手
 	url  = https://gitee.com/seekfree/seekfree_assistant
 [submodule "Example/Motherboard_Demo/line_follower_ring/smtcgo2"]
-	path = Example/Motherboard_Demo/line_follower_ring/smtcgo2
+	path = Example/libraries/smtcgo2
 	url = https://github.com/wjjsn/smtcgo2.git

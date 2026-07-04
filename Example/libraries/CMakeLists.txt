@@ -53,7 +53,6 @@ target_sources(zf_library INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/zf_device/zf_device_imu660rb.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/zf_device/zf_device_imu963ra.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/zf_device/zf_device_ips200_fb.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/zf_device/zf_device_uvc.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/zf_components/seekfree_assistant/seekfree_assistant.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/zf_components/seekfree_assistant/seekfree_assistant_interface.cpp
 )
@@ -63,4 +62,37 @@ target_link_libraries(zf_library INTERFACE
     m
     # tflm
     # ncnn
+)
+
+# ==================== find_line_lib (INTERFACE) ====================
+# 默认不开启调试，各可执行文件通过 target_compile_definitions 自行开启
+set(_SMTCGO2_DIR ${CMAKE_CURRENT_SOURCE_DIR}/smtcgo2)
+
+add_library(find_line_lib INTERFACE)
+add_library(find_line_lib::find_line_lib ALIAS find_line_lib)
+
+target_sources(find_line_lib INTERFACE
+    ${_SMTCGO2_DIR}/src/find_line_lib/hello.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/get_start_point.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/ring.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/targetboard.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/check_roadblock.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/calculate_wheel_speeds.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/skeleton.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/thinning.cpp
+    ${_SMTCGO2_DIR}/src/find_line_lib/web_imshow.cpp
+)
+
+target_include_directories(find_line_lib INTERFACE ${_SMTCGO2_DIR}/include)
+
+target_link_libraries(find_line_lib INTERFACE ${OpenCV_LIBS} civetweb)
+
+if (NOT MSVC)
+    target_link_libraries(find_line_lib INTERFACE stdc++fs)
+endif()
+
+# ==================== template_schedule ====================
+add_library(template_schedule INTERFACE)
+target_include_directories(template_schedule INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp_template_schedule
 )
