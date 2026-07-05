@@ -14,11 +14,14 @@
 #include <string>
 #include <thread>
 
-#include "find_line_lib/calculate_wheel_speeds.h"
 #include "find_line_lib/ring.h"
 #include "find_line_lib/web_imshow.h"
 
 inline std::atomic<bool> g_running{false};
+
+namespace find_line_lib {
+WebImShow server("8089");
+} // namespace find_line_lib
 
 int main() {
     std::cout << "[INFO] 正在尝试通过 V4L2 后端打开摄像头 0..." << std::endl;
@@ -39,7 +42,6 @@ int main() {
     std::cout << "[INFO] 摄像头初始化成功。当前硬件输出分辨率: " << actual_w << "x" << actual_h << std::endl;
 
     // 3. 启动 Web 服务器（RAII：离开作用域时自动停止）
-    find_line_lib::WebImShow server("8089");
     g_running.store(true);
 
     cv::Mat frame_raw, frame;
@@ -75,8 +77,8 @@ int main() {
         }
         
         // 只要你更换窗口名，网页上就会自动多弹出一个独立的窗口！
-        server.imshow("1. Result", color_debug_frame);
-        server.imshow("2. Debug", result_view);
+        find_line_lib::server.imshow("1. Result", color_debug_frame);
+        find_line_lib::server.imshow("2. Debug", result_view);
     }
 
     g_running.store(false);
